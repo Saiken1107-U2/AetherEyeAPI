@@ -2,11 +2,17 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using AetherEyeAPI.Data;
 using AetherEyeAPI.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Configuration;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using Microsoft.IdentityModel.Tokens;
 
 namespace AetherEyeAPI.Controllers
 {
@@ -15,13 +21,16 @@ namespace AetherEyeAPI.Controllers
     public class UsuariosController : ControllerBase
     {
         private readonly AetherEyeDbContext _context;
+        private readonly IConfiguration _configuration;
 
-        public UsuariosController(AetherEyeDbContext context)
+        public UsuariosController(AetherEyeDbContext context, IConfiguration configuration)
         {
             _context = context;
+            _configuration = configuration;
         }
 
         // GET: api/Usuarios
+        [Authorize(Roles = "Administrador")]
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Usuario>>> GetUsuarios()
         {
@@ -29,6 +38,7 @@ namespace AetherEyeAPI.Controllers
         }
 
         // GET: api/Usuarios/5
+        [Authorize(Roles = "Administrador")]
         [HttpGet("{id}")]
         public async Task<ActionResult<Usuario>> GetUsuario(int id)
         {
@@ -44,6 +54,7 @@ namespace AetherEyeAPI.Controllers
 
         // PUT: api/Usuarios/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
+        [Authorize(Roles = "Administrador")]
         [HttpPut("{id}")]
         public async Task<IActionResult> PutUsuario(int id, Usuario usuario)
         {
@@ -75,6 +86,7 @@ namespace AetherEyeAPI.Controllers
 
         // POST: api/Usuarios
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
+        [Authorize(Roles = "Administrador")]
         [HttpPost]
         public async Task<ActionResult<Usuario>> PostUsuario(Usuario usuario)
         {
@@ -85,6 +97,7 @@ namespace AetherEyeAPI.Controllers
         }
 
         // DELETE: api/Usuarios/5
+        [Authorize(Roles = "Administrador")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteUsuario(int id)
         {
@@ -103,6 +116,50 @@ namespace AetherEyeAPI.Controllers
         private bool UsuarioExists(int id)
         {
             return _context.Usuarios.Any(e => e.Id == id);
+        }
+
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] LoginRequest request)
+        {
+            var user = await _context.Usuarios
+                .Include(u => u.Rol)
+                .FirstOrDefaultAsync(u => u.Correo == request.Correo && u.Contrasena == request.Contrasena);
+
+            if (user == null)
+                return Unauthorized("Credenciales inválidas");
+
+            var jwtSettings = _configuration.GetSection("Jwt");
+            var key = Encoding.ASCII.GetBytes(jwtSettings["Key"]);
+
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new[]
+                {
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(ClaimTypes.Email, user.Correo),
+            new Claim(ClaimTypes.Role, user.Rol.Nombre)
+        }),
+                Expires = DateTime.UtcNow.AddMinutes(Convert.ToDouble(jwtSettings["DurationInMinutes"])),
+                Issuer = jwtSettings["Issuer"],
+                Audience = jwtSettings["Audience"],
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+            };
+
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            var tokenString = tokenHandler.WriteToken(token);
+
+            return Ok(new
+            {
+                token = tokenString,
+                usuario = new
+                {
+                    user.Id,
+                    user.NombreCompleto,
+                    user.Correo,
+                    Rol = user.Rol.Nombre
+                }
+            });
         }
     }
 }
