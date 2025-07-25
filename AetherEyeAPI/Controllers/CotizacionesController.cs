@@ -104,5 +104,65 @@ namespace AetherEyeAPI.Controllers
         {
             return _context.Cotizaciones.Any(e => e.Id == id);
         }
+
+        [HttpPost("crear")]
+        public async Task<IActionResult> CrearCotizacion([FromBody] CotizacionRequest request)
+        {
+            var producto = await _context.Productos.FindAsync(request.ProductoId);
+            if (producto == null)
+                return NotFound("Producto no encontrado");
+
+            var receta = await _context.Recetas
+                .Include(r => r.Insumo)
+                .Where(r => r.ProductoId == request.ProductoId)
+                .ToListAsync();
+
+            if (!receta.Any())
+                return BadRequest("El producto no tiene receta definida");
+
+            decimal costoTotalProduccion = 0;
+
+            foreach (var item in receta)
+            {
+                if (item.Insumo == null || item.Insumo.StockActual <= 0)
+                    return BadRequest($"El insumo '{item.Insumo?.Nombre}' no tiene stock suficiente para calcular el costo promedio");
+
+                // Método de costeo por promedio: costo promedio = costo unitario actual (ya almacenado) 
+                // NOTA: asumes que el costoUnitario ya fue calculado tras las compras
+                decimal costoPromedio = item.Insumo.CostoUnitario;
+                decimal costoInsumo = costoPromedio * item.CantidadNecesaria;
+
+                costoTotalProduccion += costoInsumo;
+            }
+
+            // (Opcional) Agregar margen de utilidad
+            decimal margenGanancia = 0.20m; // 20%
+            decimal precioFinalUnitario = costoTotalProduccion * (1 + margenGanancia);
+
+            var cotizacion = new Cotizacion
+            {
+                UsuarioId = request.UsuarioId,
+                ProductoId = request.ProductoId,
+                Cantidad = request.Cantidad,
+                PrecioUnitario = Math.Round(precioFinalUnitario, 2),
+                Total = Math.Round(precioFinalUnitario * request.Cantidad, 2),
+                Fecha = DateTime.Now,
+                Estado = "Pendiente"
+            };
+
+            _context.Cotizaciones.Add(cotizacion);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                cotizacion.Id,
+                cotizacion.ProductoId,
+                cotizacion.Cantidad,
+                cotizacion.PrecioUnitario,
+                cotizacion.Total,
+                cotizacion.Estado
+            });
+        }
+
     }
 }
