@@ -104,5 +104,53 @@ namespace AetherEyeAPI.Controllers
         {
             return _context.Ventas.Any(e => e.Id == id);
         }
+
+        [HttpPost("registrar")]
+        public async Task<IActionResult> RegistrarVenta([FromBody] VentaRequest request)
+        {
+            if (request.Productos == null || !request.Productos.Any())
+                return BadRequest("Debe incluir al menos un producto en la venta.");
+
+            var venta = new Venta
+            {
+                UsuarioId = request.UsuarioId,
+                Fecha = DateTime.Now
+            };
+
+            _context.Ventas.Add(venta);
+            await _context.SaveChangesAsync(); // para obtener venta.Id
+
+            decimal totalVenta = 0;
+
+            foreach (var item in request.Productos)
+            {
+                var producto = await _context.Productos.FindAsync(item.ProductoId);
+                if (producto == null)
+                    return NotFound($"Producto con ID {item.ProductoId} no encontrado.");
+
+                var detalle = new DetalleVenta
+                {
+                    VentaId = venta.Id,
+                    ProductoId = item.ProductoId,
+                    Cantidad = item.Cantidad,
+                    PrecioUnitario = item.PrecioUnitario
+                };
+
+                _context.DetalleVentas.Add(detalle);
+                totalVenta += item.Cantidad * item.PrecioUnitario;
+            }
+
+            venta.Total = Math.Round(totalVenta, 2);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                venta.Id,
+                venta.UsuarioId,
+                venta.Fecha,
+                venta.Total
+            });
+        }
+
     }
 }

@@ -104,5 +104,72 @@ namespace AetherEyeAPI.Controllers
         {
             return _context.Compras.Any(e => e.Id == id);
         }
+
+        [HttpPost("registrar")]
+        public async Task<IActionResult> RegistrarCompra([FromBody] CompraRequest request)
+        {
+            if (request.Insumos == null || !request.Insumos.Any())
+                return BadRequest("Debe incluir al menos un insumo en la compra.");
+
+            decimal totalCompra = 0;
+
+            var compra = new Compra
+            {
+                ProveedorId = request.ProveedorId,
+                Fecha = DateTime.Now
+            };
+
+            _context.Compras.Add(compra);
+            await _context.SaveChangesAsync(); // Guardamos para obtener el ID
+
+            foreach (var item in request.Insumos)
+            {
+                var insumo = await _context.Insumos.FindAsync(item.InsumoId);
+                if (insumo == null)
+                    return NotFound($"Insumo con ID {item.InsumoId} no encontrado.");
+
+                // Cálculo de nuevo costo promedio
+                int stockAnterior = insumo.StockActual;
+                decimal costoAnterior = insumo.CostoUnitario;
+                int cantidadNueva = item.Cantidad;
+                decimal costoNuevo = item.CostoUnitario;
+
+                int nuevoStock = stockAnterior + cantidadNueva;
+
+                decimal nuevoCostoPromedio = nuevoStock == 0
+                    ? costoNuevo
+                    : ((stockAnterior * costoAnterior) + (cantidadNueva * costoNuevo)) / nuevoStock;
+
+                // Actualizar insumo
+                insumo.StockActual = nuevoStock;
+                insumo.CostoUnitario = Math.Round(nuevoCostoPromedio, 2);
+                insumo.FechaUltimaActualizacion = DateTime.Now;
+
+                // Detalle de compra
+                var detalle = new DetalleCompra
+                {
+                    CompraId = compra.Id,
+                    InsumoId = item.InsumoId,
+                    Cantidad = cantidadNueva,
+                    CostoUnitario = costoNuevo
+                };
+
+                _context.DetalleCompras.Add(detalle);
+                totalCompra += cantidadNueva * costoNuevo;
+            }
+
+            // Actualizar total de la compra
+            compra.Total = Math.Round(totalCompra, 2);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                compra.Id,
+                compra.Fecha,
+                compra.ProveedorId,
+                compra.Total,
+                InsumosComprados = request.Insumos
+            });
+        }
     }
 }

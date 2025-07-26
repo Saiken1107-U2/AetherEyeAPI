@@ -117,9 +117,11 @@ namespace AetherEyeAPI.Controllers
                 .Where(r => r.ProductoId == request.ProductoId)
                 .ToListAsync();
 
+
             if (!receta.Any())
                 return BadRequest("El producto no tiene receta definida");
 
+            var desglose = new List<CotizacionDetalleResponse>();
             decimal costoTotalProduccion = 0;
 
             foreach (var item in receta)
@@ -127,12 +129,17 @@ namespace AetherEyeAPI.Controllers
                 if (item.Insumo == null || item.Insumo.StockActual <= 0)
                     return BadRequest($"El insumo '{item.Insumo?.Nombre}' no tiene stock suficiente para calcular el costo promedio");
 
-                // Método de costeo por promedio: costo promedio = costo unitario actual (ya almacenado) 
-                // NOTA: asumes que el costoUnitario ya fue calculado tras las compras
                 decimal costoPromedio = item.Insumo.CostoUnitario;
-                decimal costoInsumo = costoPromedio * item.CantidadNecesaria;
 
-                costoTotalProduccion += costoInsumo;
+                var detalle = new CotizacionDetalleResponse
+                {
+                    Insumo = item.Insumo.Nombre,
+                    Cantidad = item.CantidadNecesaria,
+                    CostoUnitario = costoPromedio
+                };
+
+                costoTotalProduccion += detalle.Subtotal;
+                desglose.Add(detalle);
             }
 
             // (Opcional) Agregar margen de utilidad
@@ -160,7 +167,8 @@ namespace AetherEyeAPI.Controllers
                 cotizacion.Cantidad,
                 cotizacion.PrecioUnitario,
                 cotizacion.Total,
-                cotizacion.Estado
+                cotizacion.Estado,
+                Detalle = desglose
             });
         }
 

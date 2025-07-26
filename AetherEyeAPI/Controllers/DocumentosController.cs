@@ -104,5 +104,79 @@ namespace AetherEyeAPI.Controllers
         {
             return _context.Documentos.Any(e => e.Id == id);
         }
+
+        [HttpPost("crear")]
+        public async Task<IActionResult> CrearDocumento([FromBody] DocumentoRequest request)
+        {
+            var producto = await _context.Productos.FindAsync(request.ProductoId);
+            if (producto == null)
+                return NotFound("Producto no encontrado");
+
+            var documento = new Documento
+            {
+                ProductoId = request.ProductoId,
+                Titulo = request.Titulo,
+                Descripcion = request.Descripcion,
+                UrlArchivo = request.UrlArchivo,
+                Fecha = DateTime.Now
+            };
+
+            _context.Documentos.Add(documento);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                documento.Id,
+                documento.ProductoId,
+                documento.Titulo,
+                documento.UrlArchivo
+            });
+        }
+
+        [HttpGet("producto/{productoId}")]
+        public async Task<IActionResult> ObtenerPorProducto(int productoId)
+        {
+            var documentos = await _context.Documentos
+                .Where(d => d.ProductoId == productoId)
+                .Select(d => new
+                {
+                    d.Id,
+                    d.Titulo,
+                    d.Descripcion,
+                    d.UrlArchivo,
+                    d.Fecha
+                })
+                .ToListAsync();
+
+            return Ok(documentos);
+        }
+
+        [HttpGet("cliente/{usuarioId}")]
+        public async Task<IActionResult> DocumentosCliente(int usuarioId)
+        {
+            var productosComprados = await _context.Ventas
+                .Where(v => v.UsuarioId == usuarioId)
+                .SelectMany(v => _context.DetalleVentas
+                    .Where(dv => dv.VentaId == v.Id)
+                    .Select(dv => dv.ProductoId))
+                .Distinct()
+                .ToListAsync();
+
+            var documentos = await _context.Documentos
+                .Where(d => productosComprados.Contains(d.ProductoId))
+                .Select(d => new
+                {
+                    d.Id,
+                    d.ProductoId,
+                    d.Titulo,
+                    d.Descripcion,
+                    d.UrlArchivo,
+                    d.Fecha
+                })
+                .ToListAsync();
+
+            return Ok(documentos);
+        }
+
     }
 }

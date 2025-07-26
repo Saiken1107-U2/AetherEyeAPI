@@ -104,5 +104,81 @@ namespace AetherEyeAPI.Controllers
         {
             return _context.Comentarios.Any(e => e.Id == id);
         }
+
+        [HttpPost("crear")]
+        public async Task<IActionResult> CrearComentario([FromBody] ComentarioRequest request)
+        {
+            if (request.Calificacion < 1 || request.Calificacion > 5)
+                return BadRequest("La calificación debe estar entre 1 y 5.");
+
+            // (Opcional) Validar que el usuario haya comprado el producto
+            bool haComprado = await _context.Ventas
+                .AnyAsync(v => v.UsuarioId == request.UsuarioId &&
+                               _context.DetalleVentas.Any(d => d.VentaId == v.Id && d.ProductoId == request.ProductoId));
+
+            if (!haComprado)
+                return BadRequest("El usuario no ha comprado este producto.");
+
+            var comentario = new Comentario
+            {
+                UsuarioId = request.UsuarioId,
+                ProductoId = request.ProductoId,
+                ComentarioTexto = request.ComentarioTexto,
+                Calificacion = request.Calificacion,
+                Fecha = DateTime.Now
+            };
+
+            _context.Comentarios.Add(comentario);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                comentario.Id,
+                comentario.ProductoId,
+                comentario.UsuarioId,
+                comentario.Calificacion,
+                comentario.ComentarioTexto
+            });
+        }
+
+        [HttpGet("producto/{productoId}")]
+        public async Task<IActionResult> ObtenerPorProducto(int productoId)
+        {
+            var comentarios = await _context.Comentarios
+                .Where(c => c.ProductoId == productoId)
+                .Include(c => c.Usuario)
+                .Select(c => new
+                {
+                    c.Id,
+                    Usuario = c.Usuario.NombreCompleto,
+                    c.Calificacion,
+                    c.ComentarioTexto,
+                    c.Fecha
+                })
+                .ToListAsync();
+
+            return Ok(comentarios);
+        }
+
+        [HttpGet("admin")]
+        public async Task<IActionResult> ObtenerTodos()
+        {
+            var comentarios = await _context.Comentarios
+                .Include(c => c.Usuario)
+                .Include(c => c.Producto)
+                .Select(c => new
+                {
+                    c.Id,
+                    Usuario = c.Usuario.NombreCompleto,
+                    Producto = c.Producto.Nombre,
+                    c.Calificacion,
+                    c.ComentarioTexto,
+                    c.Fecha
+                })
+                .ToListAsync();
+
+            return Ok(comentarios);
+        }
+
     }
 }
