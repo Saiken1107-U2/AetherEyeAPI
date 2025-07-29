@@ -161,5 +161,55 @@ namespace AetherEyeAPI.Controllers
                 }
             });
         }
+
+        [HttpGet("perfil/{id}")]
+        public async Task<IActionResult> ObtenerPerfil(int id)
+        {
+            var usuario = await _context.Usuarios
+                .Include(u => u.Rol)
+                .FirstOrDefaultAsync(u => u.Id == id);
+
+            if (usuario == null)
+                return NotFound("Usuario no encontrado.");
+
+            return Ok(new
+            {
+                usuario.Id,
+                usuario.NombreCompleto,
+                usuario.Correo,
+                Rol = usuario.Rol.Nombre
+            });
+        }
+
+        [HttpPut("actualizar/{id}")]
+        public async Task<IActionResult> ActualizarPerfil(int id, [FromBody] ActualizarPerfilRequest request)
+        {
+            var usuario = await _context.Usuarios.FindAsync(id);
+            if (usuario == null)
+                return NotFound("Usuario no encontrado.");
+
+            usuario.NombreCompleto = request.NombreCompleto;
+            usuario.Correo = request.Correo;
+
+            await _context.SaveChangesAsync();
+            return Ok("Perfil actualizado.");
+        }
+
+        [HttpPut("cambiar-password/{id}")]
+        public async Task<IActionResult> CambiarPassword(int id, [FromBody] CambiarPasswordRequest request)
+        {
+            var usuario = await _context.Usuarios.FindAsync(id);
+            if (usuario == null)
+                return NotFound("Usuario no encontrado.");
+
+            if (usuario.Contrasena != request.ContrasenaActual)
+                return BadRequest("La contraseña actual no es correcta.");
+
+            usuario.Contrasena = request.NuevaContrasena;
+            await _context.SaveChangesAsync();
+
+            return Ok("Contraseña actualizada.");
+        }
+
     }
 }

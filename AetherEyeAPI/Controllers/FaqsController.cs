@@ -21,13 +21,6 @@ namespace AetherEyeAPI.Controllers
             _context = context;
         }
 
-        // GET: api/Faqs
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<Faq>>> GetFaqs()
-        {
-            return await _context.Faqs.ToListAsync();
-        }
-
         // GET: api/Faqs/5
         [HttpGet("{id}")]
         public async Task<ActionResult<Faq>> GetFaq(int id)
@@ -38,71 +31,68 @@ namespace AetherEyeAPI.Controllers
             {
                 return NotFound();
             }
-
             return faq;
         }
 
-        // PUT: api/Faqs/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutFaq(int id, Faq faq)
+        [HttpPost("crear")]
+        public async Task<IActionResult> CrearFaq([FromBody] Faq faq)
         {
-            if (id != faq.Id)
-            {
-                return BadRequest();
-            }
+            if (string.IsNullOrWhiteSpace(faq.Pregunta) || string.IsNullOrWhiteSpace(faq.Respuesta))
+                return BadRequest("La pregunta y respuesta son obligatorias.");
 
-            _context.Entry(faq).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!FaqExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            return NoContent();
-        }
-
-        // POST: api/Faqs
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPost]
-        public async Task<ActionResult<Faq>> PostFaq(Faq faq)
-        {
             _context.Faqs.Add(faq);
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction("GetFaq", new { id = faq.Id }, faq);
+            return Ok(new
+            {
+                faq.Id,
+                faq.Pregunta,
+                faq.Respuesta
+            });
         }
 
-        // DELETE: api/Faqs/5
+        [HttpGet]
+        public async Task<IActionResult> ObtenerTodas()
+        {
+            var faqs = await _context.Faqs
+                .Select(f => new
+                {
+                    f.Id,
+                    f.Pregunta,
+                    f.Respuesta
+                })
+                .ToListAsync();
+            return Ok(faqs);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> EditarFaq(int id, [FromBody] Faq faq)
+        {
+            if (id != faq.Id)
+                return BadRequest("El ID no coincide.");
+
+            var existente = await _context.Faqs.FindAsync(id);
+            if (existente == null)
+                return NotFound("FAQ no encontrada.");
+
+            existente.Pregunta = faq.Pregunta;
+            existente.Respuesta = faq.Respuesta;
+
+            await _context.SaveChangesAsync();
+            return Ok("FAQ actualizada.");
+        }
+
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteFaq(int id)
+        public async Task<IActionResult> EliminarFaq(int id)
         {
             var faq = await _context.Faqs.FindAsync(id);
             if (faq == null)
-            {
-                return NotFound();
-            }
+                return NotFound("FAQ no encontrada.");
 
             _context.Faqs.Remove(faq);
             await _context.SaveChangesAsync();
 
-            return NoContent();
-        }
-
-        private bool FaqExists(int id)
-        {
-            return _context.Faqs.Any(e => e.Id == id);
+            return Ok("FAQ eliminada.");
         }
     }
 }
