@@ -7,13 +7,13 @@ namespace AetherEyeAPI.Models
         public int Id { get; set; }
 
         [Required]
-        public string NombreCompleto { get; set; }
+        public required string NombreCompleto { get; set; }
 
         [Required]
-        public string Correo { get; set; }
+        public required string Correo { get; set; }
 
         [Required]
-        public string Contrasena { get; set; }
+        public required string Contrasena { get; set; }
 
         public int RolId { get; set; }
         public Rol? Rol { get; set; }

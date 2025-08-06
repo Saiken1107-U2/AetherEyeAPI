@@ -38,5 +38,16 @@ namespace AetherEyeAPI.Controllers
                 InsumosBajoStock = insumosBajoStock
             });
         }
+
+        [HttpGet("totales")]
+        public async Task<IActionResult> ObtenerTotales()
+        {
+            var usuarios = await _context.Usuarios.CountAsync();
+            var productos = await _context.Productos.CountAsync();
+            var ventas = await _context.Ventas.CountAsync();
+            var comentarios = await _context.Comentarios.CountAsync();
+
+            return Ok(new { usuarios, productos, ventas, comentarios });
+        }
     }
 }

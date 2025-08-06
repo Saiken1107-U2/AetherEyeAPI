@@ -172,5 +172,205 @@ namespace AetherEyeAPI.Controllers
             });
         }
 
+        [HttpGet("usuario/{usuarioId}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetCotizacionesPorUsuario(int usuarioId)
+        {
+            var cotizaciones = await _context.Cotizaciones
+                .Include(c => c.Producto)
+                .Include(c => c.Usuario)
+                .Where(c => c.UsuarioId == usuarioId)
+                .OrderByDescending(c => c.Fecha)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Cantidad,
+                    c.PrecioUnitario,
+                    c.Total,
+                    c.Fecha,
+                    c.Estado,
+                    Producto = new
+                    {
+                        c.Producto!.Id,
+                        c.Producto.Nombre,
+                        c.Producto.Descripcion
+                    }
+                })
+                .ToListAsync();
+
+            return Ok(cotizaciones);
+        }
+
+        [HttpGet("pendientes")]
+        public async Task<ActionResult<IEnumerable<object>>> GetCotizacionesPendientes()
+        {
+            var cotizaciones = await _context.Cotizaciones
+                .Include(c => c.Producto)
+                .Include(c => c.Usuario)
+                .Where(c => c.Estado == "Pendiente")
+                .OrderByDescending(c => c.Fecha)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Cantidad,
+                    c.PrecioUnitario,
+                    c.Total,
+                    c.Fecha,
+                    c.Estado,
+                    Producto = new
+                    {
+                        c.Producto!.Id,
+                        c.Producto.Nombre,
+                        c.Producto.Descripcion
+                    },
+                    Usuario = new
+                    {
+                        c.Usuario!.Id,
+                        c.Usuario.NombreCompleto,
+                        c.Usuario.Correo
+                    }
+                })
+                .ToListAsync();
+
+            return Ok(cotizaciones);
+        }
+
+        [HttpGet("todas")]
+        public async Task<ActionResult<IEnumerable<object>>> GetTodasLasCotizaciones()
+        {
+            var cotizaciones = await _context.Cotizaciones
+                .Include(c => c.Producto)
+                .Include(c => c.Usuario)
+                .OrderByDescending(c => c.Fecha)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Cantidad,
+                    c.PrecioUnitario,
+                    c.Total,
+                    c.Fecha,
+                    c.Estado,
+                    Producto = new
+                    {
+                        c.Producto!.Id,
+                        c.Producto.Nombre,
+                        c.Producto.Descripcion
+                    },
+                    Usuario = new
+                    {
+                        c.Usuario!.Id,
+                        c.Usuario.NombreCompleto,
+                        c.Usuario.Correo
+                    }
+                })
+                .ToListAsync();
+
+            return Ok(cotizaciones);
+        }
+
+        [HttpPut("{id}/estado")]
+        public async Task<IActionResult> CambiarEstadoCotizacion(int id, [FromBody] CambiarEstadoCotizacionRequest request)
+        {
+            var cotizacion = await _context.Cotizaciones
+                .Include(c => c.Usuario)
+                .Include(c => c.Producto)
+                .FirstOrDefaultAsync(c => c.Id == id);
+                
+            if (cotizacion == null)
+                return NotFound("Cotización no encontrada");
+
+            var estadoAnterior = cotizacion.Estado;
+            cotizacion.Estado = request.Estado;
+
+            // Si la cotización se aprueba, crear una venta automáticamente
+            if (request.Estado.Equals("Aprobada", StringComparison.OrdinalIgnoreCase) && 
+                !estadoAnterior.Equals("Aprobada", StringComparison.OrdinalIgnoreCase))
+            {
+                await CrearVentaDesdeCotizacion(cotizacion);
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = $"Estado de cotización actualizado a: {request.Estado}" });
+        }
+
+        private async Task CrearVentaDesdeCotizacion(Cotizacion cotizacion)
+        {
+            // Crear la venta principal
+            var venta = new Venta
+            {
+                UsuarioId = cotizacion.UsuarioId,
+                Fecha = DateTime.Now,
+                Total = cotizacion.Total
+            };
+
+            _context.Ventas.Add(venta);
+            await _context.SaveChangesAsync();
+
+            // Crear el detalle de la venta
+            var detalleVenta = new DetalleVenta
+            {
+                VentaId = venta.Id,
+                ProductoId = cotizacion.ProductoId,
+                Cantidad = cotizacion.Cantidad,
+                PrecioUnitario = cotizacion.PrecioUnitario
+            };
+
+            _context.DetalleVentas.Add(detalleVenta);
+            await _context.SaveChangesAsync();
+        }
+
+        [HttpGet("detalle/{id}")]
+        public async Task<IActionResult> GetDetalleCotizacion(int id)
+        {
+            var cotizacion = await _context.Cotizaciones
+                .Include(c => c.Producto)
+                .Include(c => c.Usuario)
+                .FirstOrDefaultAsync(c => c.Id == id);
+
+            if (cotizacion == null)
+                return NotFound("Cotización no encontrada");
+
+            // Obtener el desglose de la receta
+            var receta = await _context.Recetas
+                .Include(r => r.Insumo)
+                .Where(r => r.ProductoId == cotizacion.ProductoId)
+                .ToListAsync();
+
+            var desglose = new List<CotizacionDetalleResponse>();
+            foreach (var item in receta)
+            {
+                var detalle = new CotizacionDetalleResponse
+                {
+                    Insumo = item.Insumo?.Nombre ?? "N/A",
+                    Cantidad = item.CantidadNecesaria,
+                    CostoUnitario = item.Insumo?.CostoUnitario ?? 0
+                };
+                desglose.Add(detalle);
+            }
+
+            return Ok(new
+            {
+                cotizacion.Id,
+                cotizacion.Cantidad,
+                cotizacion.PrecioUnitario,
+                cotizacion.Total,
+                cotizacion.Fecha,
+                cotizacion.Estado,
+                Producto = new
+                {
+                    cotizacion.Producto!.Id,
+                    cotizacion.Producto.Nombre,
+                    cotizacion.Producto.Descripcion
+                },
+                Usuario = new
+                {
+                    cotizacion.Usuario!.Id,
+                    cotizacion.Usuario.NombreCompleto,
+                    cotizacion.Usuario.Correo
+                },
+                Desglose = desglose
+            });
+        }
+
     }
 }

@@ -10,6 +10,6 @@
     public class CompraRequest
     {
         public int ProveedorId { get; set; }
-        public List<CompraInsumoRequest> Insumos { get; set; }
+        public required List<CompraInsumoRequest> Insumos { get; set; }
     }
 }

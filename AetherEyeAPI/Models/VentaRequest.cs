@@ -10,6 +10,6 @@
     public class VentaRequest
     {
         public int UsuarioId { get; set; }
-        public List<VentaProductoRequest> Productos { get; set; }
+        public required List<VentaProductoRequest> Productos { get; set; }
     }
 }

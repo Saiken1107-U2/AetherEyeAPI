@@ -2,7 +2,7 @@
 {
     public class ActualizarPerfilRequest
     {
-        public string NombreCompleto { get; set; }
-        public string Correo { get; set; }
+        public required string NombreCompleto { get; set; }
+        public required string Correo { get; set; }
     }
 }

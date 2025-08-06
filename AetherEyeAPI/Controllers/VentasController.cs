@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using AetherEyeAPI.Data;
 using AetherEyeAPI.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace AetherEyeAPI.Controllers
 {
@@ -152,5 +153,186 @@ namespace AetherEyeAPI.Controllers
             });
         }
 
+        [HttpGet("todas")]
+        public async Task<IActionResult> ObtenerTodasLasVentas()
+        {
+            Console.WriteLine("🔧 VentasController - Obteniendo todas las ventas para admin...");
+            
+            var ventas = await (from venta in _context.Ventas
+                              join usuario in _context.Usuarios on venta.UsuarioId equals usuario.Id
+                              join detalle in _context.DetalleVentas on venta.Id equals detalle.VentaId
+                              join producto in _context.Productos on detalle.ProductoId equals producto.Id
+                              select new
+                              {
+                                  id = venta.Id,
+                                  producto = producto.Nombre,
+                                  cliente = usuario.NombreCompleto,
+                                  cantidad = detalle.Cantidad,
+                                  total = venta.Total,
+                                  estado = "Completada", // Las ventas siempre están completadas
+                                  fecha = venta.Fecha // Mantenemos como DateTime para Entity Framework
+                              })
+                              .OrderByDescending(v => v.fecha)
+                              .ToListAsync();
+
+            // Convertir la fecha a string después de obtener los datos
+            var resultado = ventas.Select(v => new
+            {
+                v.id,
+                v.producto,
+                v.cliente,
+                v.cantidad,
+                v.total,
+                v.estado,
+                fecha = v.fecha.ToString("yyyy-MM-dd")
+            }).ToList();
+
+            Console.WriteLine($"🔧 VentasController - Ventas encontradas: {resultado.Count}");
+            if (resultado.Any())
+            {
+                var primeraVenta = resultado.First();
+                Console.WriteLine($"🔧 Primera venta: Producto={primeraVenta.producto}, Cliente={primeraVenta.cliente}, Cantidad={primeraVenta.cantidad}");
+            }
+
+            return Ok(resultado);
+        }
+
+        [HttpGet("detalladas")]
+        public async Task<IActionResult> ObtenerVentasDetalladas()
+        {
+            Console.WriteLine("🔧 VentasController - Obteniendo ventas con detalles completos...");
+            
+            var ventasConDetalle = await (from venta in _context.Ventas
+                                        join usuario in _context.Usuarios on venta.UsuarioId equals usuario.Id
+                                        select new
+                                        {
+                                            venta.Id,
+                                            Cliente = usuario.NombreCompleto,
+                                            CorreoCliente = usuario.Correo,
+                                            venta.Total,
+                                            Fecha = venta.Fecha,
+                                            Productos = (from detalle in _context.DetalleVentas
+                                                       join producto in _context.Productos on detalle.ProductoId equals producto.Id
+                                                       where detalle.VentaId == venta.Id
+                                                       select new
+                                                       {
+                                                           ProductoId = detalle.ProductoId,
+                                                           Nombre = producto.Nombre,
+                                                           Cantidad = detalle.Cantidad,
+                                                           PrecioUnitario = detalle.PrecioUnitario,
+                                                           Subtotal = detalle.Cantidad * detalle.PrecioUnitario
+                                                       }).ToList()
+                                        })
+                                        .OrderByDescending(v => v.Fecha)
+                                        .ToListAsync();
+
+            // Agregar campo calculado CantidadProductos
+            var resultado = ventasConDetalle.Select(v => new
+            {
+                v.Id,
+                v.Cliente,
+                v.CorreoCliente,
+                v.Total,
+                v.Fecha,
+                CantidadProductos = v.Productos.Sum(p => p.Cantidad),
+                v.Productos
+            });
+
+            return Ok(resultado);
+        }
+
+        [HttpGet("cliente/{usuarioId}")]
+        [Authorize] // Requiere estar autenticado
+        public async Task<IActionResult> ObtenerComprasDelCliente(int usuarioId)
+        {
+            try
+            {
+                var compras = await _context.Ventas
+                    .Where(v => v.UsuarioId == usuarioId)
+                    .Select(v => new
+                    {
+                        v.Id,
+                        v.Fecha,
+                        v.Total,
+                        Estado = "Completada" // Las ventas siempre están completadas
+                    })
+                    .OrderByDescending(v => v.Fecha)
+                    .ToListAsync();
+
+                return Ok(compras);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error interno del servidor", detail = ex.Message });
+            }
+        }
+
+        // Endpoint temporal para debug - eliminar en producción
+        [HttpGet("test/{usuarioId}")]
+        public async Task<IActionResult> TestComprasDelCliente(int usuarioId)
+        {
+            try
+            {
+                var todasLasVentas = await _context.Ventas.ToListAsync();
+                var ventasDelUsuario = await _context.Ventas
+                    .Where(v => v.UsuarioId == usuarioId)
+                    .ToListAsync();
+
+                return Ok(new
+                {
+                    TotalVentas = todasLasVentas.Count,
+                    VentasDelUsuario = ventasDelUsuario.Count,
+                    UsuarioId = usuarioId,
+                    Ventas = ventasDelUsuario.Select(v => new
+                    {
+                        v.Id,
+                        v.UsuarioId,
+                        v.Fecha,
+                        v.Total
+                    })
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error en test", detail = ex.Message });
+            }
+        }
+
+        [HttpGet("cliente/{usuarioId}/detalle/{ventaId}")]
+        [Authorize] // Requiere estar autenticado
+        public async Task<IActionResult> ObtenerDetalleCompra(int usuarioId, int ventaId)
+        {
+            var venta = await _context.Ventas
+                .Include(v => v.Usuario)
+                .FirstOrDefaultAsync(v => v.Id == ventaId && v.UsuarioId == usuarioId);
+
+            if (venta == null)
+                return NotFound("Compra no encontrada");
+
+            var detalles = await _context.DetalleVentas
+                .Include(dv => dv.Producto)
+                .Where(dv => dv.VentaId == ventaId)
+                .Select(dv => new
+                {
+                    dv.Id,
+                    Producto = dv.Producto!.Nombre,
+                    dv.Cantidad,
+                    dv.PrecioUnitario,
+                    Subtotal = dv.Subtotal
+                })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                Compra = new
+                {
+                    venta.Id,
+                    venta.Fecha,
+                    venta.Total,
+                    Cliente = venta.Usuario!.NombreCompleto
+                },
+                Detalles = detalles
+            });
+        }
     }
 }

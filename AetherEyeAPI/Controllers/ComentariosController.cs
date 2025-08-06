@@ -105,40 +105,105 @@ namespace AetherEyeAPI.Controllers
             return _context.Comentarios.Any(e => e.Id == id);
         }
 
+        [HttpGet("productos-comprados/{usuarioId}")]
+        public async Task<IActionResult> ObtenerProductosComprados(int usuarioId)
+        {
+            try
+            {
+                // Verificar si el usuario existe
+                var usuarioExiste = await _context.Usuarios.AnyAsync(u => u.Id == usuarioId);
+                if (!usuarioExiste)
+                {
+                    return BadRequest($"Usuario {usuarioId} no existe");
+                }
+
+                // Buscar productos comprados usando una consulta optimizada
+                var productosComprados = await _context.DetalleVentas
+                    .Include(d => d.Producto)
+                    .Include(d => d.Venta)
+                    .Where(d => d.Venta!.UsuarioId == usuarioId)
+                    .Where(d => d.Producto != null)
+                    .Select(d => new
+                    {
+                        ProductoId = d.ProductoId,
+                        ProductoNombre = d.Producto!.Nombre,
+                        FechaCompra = d.Venta!.Fecha,
+                        VentaId = d.VentaId
+                    })
+                    .GroupBy(p => p.ProductoId)
+                    .Select(g => g.OrderByDescending(x => x.FechaCompra).First()) // Tomar la compra más reciente
+                    .OrderByDescending(p => p.FechaCompra)
+                    .ToListAsync();
+
+                return Ok(productosComprados);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error al obtener productos comprados", detail = ex.Message });
+            }
+        }
+
         [HttpPost("crear")]
         public async Task<IActionResult> CrearComentario([FromBody] ComentarioRequest request)
         {
-            if (request.Calificacion < 1 || request.Calificacion > 5)
-                return BadRequest("La calificación debe estar entre 1 y 5.");
-
-            // (Opcional) Validar que el usuario haya comprado el producto
-            bool haComprado = await _context.Ventas
-                .AnyAsync(v => v.UsuarioId == request.UsuarioId &&
-                               _context.DetalleVentas.Any(d => d.VentaId == v.Id && d.ProductoId == request.ProductoId));
-
-            if (!haComprado)
-                return BadRequest("El usuario no ha comprado este producto.");
-
-            var comentario = new Comentario
+            try
             {
-                UsuarioId = request.UsuarioId,
-                ProductoId = request.ProductoId,
-                ComentarioTexto = request.ComentarioTexto,
-                Calificacion = request.Calificacion,
-                Fecha = DateTime.Now
-            };
+                // Validaciones básicas
+                if (request == null)
+                    return BadRequest("Datos del comentario son requeridos.");
 
-            _context.Comentarios.Add(comentario);
-            await _context.SaveChangesAsync();
+                if (string.IsNullOrWhiteSpace(request.ComentarioTexto))
+                    return BadRequest("El texto del comentario es requerido.");
 
-            return Ok(new
+                if (request.Calificacion < 1 || request.Calificacion > 5)
+                    return BadRequest("La calificación debe estar entre 1 y 5.");
+
+                // Verificar que el producto y usuario existen, y que el usuario haya comprado el producto
+                var validacion = await _context.DetalleVentas
+                    .Include(d => d.Producto)
+                    .Include(d => d.Venta)
+                    .Where(d => d.Venta!.UsuarioId == request.UsuarioId && 
+                               d.ProductoId == request.ProductoId)
+                    .FirstOrDefaultAsync();
+
+                if (validacion == null)
+                    return BadRequest("Solo puedes comentar productos que hayas comprado. Por favor, selecciona un producto de tu historial de compras.");
+
+                // Verificar si ya existe un comentario del usuario para este producto
+                var comentarioExistente = await _context.Comentarios
+                    .Where(c => c.UsuarioId == request.UsuarioId && c.ProductoId == request.ProductoId)
+                    .FirstOrDefaultAsync();
+
+                if (comentarioExistente != null)
+                    return BadRequest("Ya has comentado este producto. Solo se permite un comentario por producto.");
+
+                // Crear el comentario
+                var comentario = new Comentario
+                {
+                    UsuarioId = request.UsuarioId,
+                    ProductoId = request.ProductoId,
+                    ComentarioTexto = request.ComentarioTexto.Trim(),
+                    Calificacion = request.Calificacion,
+                    Fecha = DateTime.Now
+                };
+
+                _context.Comentarios.Add(comentario);
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    comentario.Id,
+                    comentario.ProductoId,
+                    comentario.UsuarioId,
+                    comentario.Calificacion,
+                    comentario.ComentarioTexto,
+                    Mensaje = "Comentario creado exitosamente"
+                });
+            }
+            catch (Exception ex)
             {
-                comentario.Id,
-                comentario.ProductoId,
-                comentario.UsuarioId,
-                comentario.Calificacion,
-                comentario.ComentarioTexto
-            });
+                return BadRequest($"Error al crear comentario: {ex.Message}");
+            }
         }
 
         [HttpGet("producto/{productoId}")]
@@ -150,7 +215,7 @@ namespace AetherEyeAPI.Controllers
                 .Select(c => new
                 {
                     c.Id,
-                    Usuario = c.Usuario.NombreCompleto,
+                    Usuario = c.Usuario!.NombreCompleto,
                     c.Calificacion,
                     c.ComentarioTexto,
                     c.Fecha
@@ -169,8 +234,8 @@ namespace AetherEyeAPI.Controllers
                 .Select(c => new
                 {
                     c.Id,
-                    Usuario = c.Usuario.NombreCompleto,
-                    Producto = c.Producto.Nombre,
+                    Usuario = c.Usuario!.NombreCompleto,
+                    Producto = c.Producto!.Nombre,
                     c.Calificacion,
                     c.ComentarioTexto,
                     c.Fecha
@@ -180,5 +245,102 @@ namespace AetherEyeAPI.Controllers
             return Ok(comentarios);
         }
 
+        [HttpGet("usuario/{usuarioId}")]
+        public async Task<IActionResult> ObtenerPorUsuario(int usuarioId)
+        {
+            var comentarios = await _context.Comentarios
+                .Include(c => c.Usuario)
+                .Include(c => c.Producto)
+                .Where(c => c.UsuarioId == usuarioId)
+                .Select(c => new
+                {
+                    c.Id,
+                    Usuario = c.Usuario!.NombreCompleto,
+                    Producto = c.Producto!.Nombre,
+                    c.Calificacion,
+                    c.ComentarioTexto,
+                    c.Fecha
+                })
+                .ToListAsync();
+
+            return Ok(comentarios);
+        }
+
+        [HttpGet("lista")]
+        public async Task<IActionResult> ObtenerTodosLosComentarios()
+        {
+            Console.WriteLine("🔧 ComentariosController - Obteniendo todos los comentarios...");
+            
+            var comentarios = await _context.Comentarios
+                .Include(c => c.Producto)
+                .Include(c => c.Usuario)
+                .OrderByDescending(c => c.Fecha)
+                .ToListAsync();
+
+            // Mapear los datos después de obtenerlos de la base de datos
+            var resultado = comentarios.Select(c => new
+            {
+                id = c.Id,
+                producto = c.Producto?.Nombre ?? "Producto no disponible",
+                cliente = c.Usuario?.NombreCompleto ?? "Cliente no disponible",
+                contenido = c.ComentarioTexto,
+                fecha = c.Fecha.ToString("yyyy-MM-dd")
+            }).ToList();
+
+            Console.WriteLine($"🔧 ComentariosController - Comentarios encontrados: {resultado.Count}");
+            if (resultado.Any())
+            {
+                var primerComentario = resultado.First();
+                Console.WriteLine($"🔧 Primer comentario: Producto={primerComentario.producto}, Cliente={primerComentario.cliente}");
+            }
+
+            return Ok(resultado);
+        }
+
+        [HttpDelete("eliminar/{id}")]
+        public async Task<IActionResult> EliminarComentario(int id)
+        {
+            var comentario = await _context.Comentarios.FindAsync(id);
+            if (comentario == null) return NotFound();
+
+            _context.Comentarios.Remove(comentario);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        [HttpGet("estadisticas/{productoId}")]
+        public async Task<IActionResult> ObtenerEstadisticasProducto(int productoId)
+        {
+            var comentarios = await _context.Comentarios
+                .Where(c => c.ProductoId == productoId)
+                .ToListAsync();
+
+            if (!comentarios.Any())
+            {
+                return Ok(new
+                {
+                    TotalComentarios = 0,
+                    CalificacionPromedio = 0.0,
+                    DistribucionCalificaciones = new int[5]
+                });
+            }
+
+            var estadisticas = new
+            {
+                TotalComentarios = comentarios.Count,
+                CalificacionPromedio = Math.Round(comentarios.Average(c => c.Calificacion), 1),
+                DistribucionCalificaciones = new int[]
+                {
+                    comentarios.Count(c => c.Calificacion == 1),
+                    comentarios.Count(c => c.Calificacion == 2),
+                    comentarios.Count(c => c.Calificacion == 3),
+                    comentarios.Count(c => c.Calificacion == 4),
+                    comentarios.Count(c => c.Calificacion == 5)
+                }
+            };
+
+            return Ok(estadisticas);
+        }
     }
 }

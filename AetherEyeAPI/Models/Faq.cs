@@ -3,7 +3,7 @@
     public class Faq
     {
         public int Id { get; set; }
-        public string Pregunta { get; set; }
-        public string Respuesta { get; set; }
+        public required string Pregunta { get; set; }
+        public required string Respuesta { get; set; }
     }
 }

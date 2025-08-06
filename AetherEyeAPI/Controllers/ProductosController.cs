@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using AetherEyeAPI.Data;
 using AetherEyeAPI.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace AetherEyeAPI.Controllers
 {
@@ -23,9 +24,30 @@ namespace AetherEyeAPI.Controllers
 
         // GET: api/Productos
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Producto>>> GetProductos()
+        public async Task<ActionResult<IEnumerable<object>>> GetProductos()
         {
-            return await _context.Productos.ToListAsync();
+            Console.WriteLine("🔧 ProductosController - Obteniendo productos...");
+            
+            var productos = await _context.Productos
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Nombre,
+                    p.Descripcion,
+                    p.ImagenUrl,
+                    PrecioUnitario = p.PrecioVenta, // Mapear para el frontend
+                    p.FechaRegistro
+                })
+                .OrderBy(p => p.Nombre)
+                .ToListAsync();
+                
+            Console.WriteLine($"🔧 ProductosController - Productos encontrados: {productos.Count}");
+            foreach (var prod in productos.Take(3))
+            {
+                Console.WriteLine($"🔧 Producto: {prod.Nombre}, Precio: {prod.PrecioUnitario}");
+            }
+                
+            return Ok(productos);
         }
 
         // GET: api/Productos/5
@@ -44,15 +66,20 @@ namespace AetherEyeAPI.Controllers
 
         // PUT: api/Productos/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
+        [Authorize(Roles = "Administrador,Admin")]
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutProducto(int id, Producto producto)
+        public async Task<IActionResult> PutProducto(int id, [FromBody] ProductoUpdateRequest request)
         {
-            if (id != producto.Id)
-            {
-                return BadRequest();
-            }
+            var producto = await _context.Productos.FindAsync(id);
+            if (producto == null)
+                return NotFound("Producto no encontrado.");
 
-            _context.Entry(producto).State = EntityState.Modified;
+            producto.Nombre = request.Nombre;
+            producto.Descripcion = request.Descripcion;
+            producto.PrecioVenta = request.PrecioUnitario;  
+            
+            if (!string.IsNullOrEmpty(request.ImagenUrl))
+                producto.ImagenUrl = request.ImagenUrl;
 
             try
             {
@@ -70,14 +97,24 @@ namespace AetherEyeAPI.Controllers
                 }
             }
 
-            return NoContent();
+            return Ok(new { message = "Producto actualizado correctamente." });
         }
 
         // POST: api/Productos
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
+        [Authorize(Roles = "Administrador,Admin")]
         [HttpPost]
-        public async Task<ActionResult<Producto>> PostProducto(Producto producto)
+        public async Task<ActionResult<Producto>> PostProducto([FromBody] ProductoCreateRequest request)
         {
+            var producto = new Producto
+            {
+                Nombre = request.Nombre,
+                Descripcion = request.Descripcion,
+                PrecioVenta = request.PrecioUnitario, // Mapear desde el frontend
+                ImagenUrl = request.ImagenUrl,
+                FechaRegistro = DateTime.Now
+            };
+
             _context.Productos.Add(producto);
             await _context.SaveChangesAsync();
 
@@ -85,6 +122,7 @@ namespace AetherEyeAPI.Controllers
         }
 
         // DELETE: api/Productos/5
+        [Authorize(Roles = "Administrador,Admin")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteProducto(int id)
         {
@@ -104,5 +142,21 @@ namespace AetherEyeAPI.Controllers
         {
             return _context.Productos.Any(e => e.Id == id);
         }
+    }
+
+    public class ProductoUpdateRequest
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public string Descripcion { get; set; } = string.Empty;
+        public decimal PrecioUnitario { get; set; }
+        public string? ImagenUrl { get; set; }
+    }
+
+    public class ProductoCreateRequest
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public string Descripcion { get; set; } = string.Empty;
+        public decimal PrecioUnitario { get; set; }
+        public string? ImagenUrl { get; set; }
     }
 }
