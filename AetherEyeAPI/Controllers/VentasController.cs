@@ -334,5 +334,72 @@ namespace AetherEyeAPI.Controllers
                 Detalles = detalles
             });
         }
+
+        // Endpoint temporal para generar datos de prueba
+        [HttpPost("generar-datos-prueba")]
+        public async Task<IActionResult> GenerarDatosPrueba()
+        {
+            try
+            {
+                // Verificar si ya existen datos
+                var ventasExistentes = await _context.Ventas.CountAsync();
+                if (ventasExistentes > 0)
+                {
+                    return Ok(new { message = "Ya existen datos de ventas" });
+                }
+
+                // Buscar usuarios existentes
+                var usuarios = await _context.Usuarios.Take(3).ToListAsync();
+                if (!usuarios.Any())
+                {
+                    return BadRequest("No hay usuarios en la base de datos");
+                }
+
+                // Buscar productos existentes
+                var productos = await _context.Productos.Take(5).ToListAsync();
+                if (!productos.Any())
+                {
+                    return BadRequest("No hay productos en la base de datos");
+                }
+
+                // Crear ventas de prueba
+                var ventasPrueba = new List<Venta>();
+                var random = new Random();
+
+                for (int i = 0; i < 10; i++)
+                {
+                    var venta = new Venta
+                    {
+                        UsuarioId = usuarios[random.Next(usuarios.Count)].Id,
+                        Fecha = DateTime.Now.AddDays(-random.Next(30)),
+                        Total = random.Next(10000, 100000)
+                    };
+                    
+                    _context.Ventas.Add(venta);
+                    await _context.SaveChangesAsync();
+
+                    // Crear detalle de venta
+                    var producto = productos[random.Next(productos.Count)];
+                    var cantidad = random.Next(1, 5);
+                    
+                    var detalle = new DetalleVenta
+                    {
+                        VentaId = venta.Id,
+                        ProductoId = producto.Id,
+                        Cantidad = cantidad,
+                        PrecioUnitario = venta.Total / cantidad
+                    };
+                    
+                    _context.DetalleVentas.Add(detalle);
+                }
+
+                await _context.SaveChangesAsync();
+                return Ok(new { message = "Datos de prueba generados exitosamente" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest($"Error al generar datos: {ex.Message}");
+            }
+        }
     }
 }

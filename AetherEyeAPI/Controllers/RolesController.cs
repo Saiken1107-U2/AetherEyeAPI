@@ -25,7 +25,42 @@ namespace AetherEyeAPI.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Rol>>> GetRoles()
         {
-            return await _context.Roles.ToListAsync();
+            try
+            {
+                // Obtener todos los roles primero y luego filtrar duplicados en memoria
+                var todosLosRoles = await _context.Roles.ToListAsync();
+                
+                // Filtrar duplicados por nombre (ignorando mayúsculas)
+                var rolesUnicos = todosLosRoles
+                    .GroupBy(r => r.Nombre.ToLower())
+                    .Select(g => g.First())
+                    .OrderBy(r => r.Nombre)
+                    .ToList();
+
+                return Ok(rolesUnicos);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error al obtener roles: {ex.Message}");
+            }
+        }
+
+        // GET: api/Roles/debug - Endpoint temporal para ver todos los roles incluyendo duplicados
+        [HttpGet("debug")]
+        public async Task<ActionResult<IEnumerable<object>>> GetRolesDebug()
+        {
+            var todosLosRoles = await _context.Roles
+                .Select(r => new { r.Id, r.Nombre })
+                .OrderBy(r => r.Nombre)
+                .ToListAsync();
+                
+            Console.WriteLine($"🔍 Total de roles en BD: {todosLosRoles.Count}");
+            foreach(var rol in todosLosRoles)
+            {
+                Console.WriteLine($"🔍 Rol: ID={rol.Id}, Nombre='{rol.Nombre}'");
+            }
+                
+            return todosLosRoles;
         }
 
         // GET: api/Roles/5

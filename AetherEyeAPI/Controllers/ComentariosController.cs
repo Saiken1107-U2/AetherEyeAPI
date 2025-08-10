@@ -342,5 +342,71 @@ namespace AetherEyeAPI.Controllers
 
             return Ok(estadisticas);
         }
+
+        // Endpoint temporal para generar datos de prueba
+        [HttpPost("generar-datos-prueba")]
+        public async Task<IActionResult> GenerarDatosPrueba()
+        {
+            try
+            {
+                // Verificar si ya existen datos
+                var comentariosExistentes = await _context.Comentarios.CountAsync();
+                if (comentariosExistentes > 0)
+                {
+                    return Ok(new { message = "Ya existen datos de comentarios" });
+                }
+
+                // Buscar usuarios existentes
+                var usuarios = await _context.Usuarios.Take(3).ToListAsync();
+                if (!usuarios.Any())
+                {
+                    return BadRequest("No hay usuarios en la base de datos");
+                }
+
+                // Buscar productos existentes
+                var productos = await _context.Productos.Take(5).ToListAsync();
+                if (!productos.Any())
+                {
+                    return BadRequest("No hay productos en la base de datos");
+                }
+
+                // Comentarios de ejemplo
+                var comentariosEjemplo = new string[]
+                {
+                    "Excelente producto, muy recomendado",
+                    "Buena calidad pero podría mejorar en el empaque",
+                    "Perfecto para lo que necesitaba, llegó rápido",
+                    "El producto cumple con las expectativas",
+                    "Muy buena atención al cliente y producto de calidad",
+                    "Recomendado 100%, volveré a comprar",
+                    "Buen precio y excelente calidad",
+                    "El producto llegó en perfectas condiciones"
+                };
+
+                // Crear comentarios de prueba
+                var random = new Random();
+
+                for (int i = 0; i < 15; i++)
+                {
+                    var comentario = new Comentario
+                    {
+                        UsuarioId = usuarios[random.Next(usuarios.Count)].Id,
+                        ProductoId = productos[random.Next(productos.Count)].Id,
+                        ComentarioTexto = comentariosEjemplo[random.Next(comentariosEjemplo.Length)],
+                        Calificacion = random.Next(3, 6), // Calificaciones entre 3 y 5
+                        Fecha = DateTime.Now.AddDays(-random.Next(60))
+                    };
+                    
+                    _context.Comentarios.Add(comentario);
+                }
+
+                await _context.SaveChangesAsync();
+                return Ok(new { message = "Datos de prueba de comentarios generados exitosamente" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest($"Error al generar datos: {ex.Message}");
+            }
+        }
     }
 }

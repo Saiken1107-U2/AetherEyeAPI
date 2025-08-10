@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using AetherEyeAPI.Data;
 using AetherEyeAPI.Models;
+using AetherEyeAPI.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Configuration;
 using System.IdentityModel.Tokens.Jwt;
@@ -22,11 +23,13 @@ namespace AetherEyeAPI.Controllers
     {
         private readonly AetherEyeDbContext _context;
         private readonly IConfiguration _configuration;
+        private readonly IEmailService _emailService;
 
-        public UsuariosController(AetherEyeDbContext context, IConfiguration configuration)
+        public UsuariosController(AetherEyeDbContext context, IConfiguration configuration, IEmailService emailService)
         {
             _context = context;
             _configuration = configuration;
+            _emailService = emailService;
         }
 
         // GET: api/Usuarios
@@ -122,7 +125,54 @@ namespace AetherEyeAPI.Controllers
             await _context.SaveChangesAsync();
             Console.WriteLine("🔧 PostUsuario - Usuario creado exitosamente");
 
-            return CreatedAtAction("GetUsuario", new { id = usuario.Id }, usuario);
+            // 📧 ENVÍO AUTOMÁTICO DE CORREO PARA USUARIOS CLIENTE
+            try
+            {
+                // Verificar si el usuario es un cliente (no administrador)
+                var rolUsuario = await _context.Roles.FindAsync(usuario.RolId);
+                
+                if (rolUsuario != null && (rolUsuario.Nombre == "Cliente" || rolUsuario.Nombre == "cliente"))
+                {
+                    Console.WriteLine($"📧 Enviando credenciales por correo a: {usuario.Correo}");
+                    
+                    var correoEnviado = await _emailService.EnviarCredencialesUsuario(
+                        usuario.Correo,
+                        usuario.NombreCompleto,
+                        usuario.Correo,
+                        usuario.Contrasena
+                    );
+                    
+                    if (correoEnviado)
+                    {
+                        Console.WriteLine("✅ Correo de credenciales enviado exitosamente");
+                    }
+                    else
+                    {
+                        Console.WriteLine("⚠️ No se pudo enviar el correo de credenciales");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("ℹ️ Usuario no es cliente, no se envía correo automático");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error al enviar correo: {ex.Message}");
+                // No fallar la creación del usuario por problemas de correo
+            }
+
+            // Devolver un objeto simple sin referencias circulares
+            var usuarioResponse = new 
+            {
+                usuario.Id,
+                usuario.NombreCompleto,
+                usuario.Correo,
+                usuario.FechaRegistro,
+                RolId = usuario.RolId
+            };
+
+            return CreatedAtAction("GetUsuario", new { id = usuario.Id }, usuarioResponse);
         }
 
         // DELETE: api/Usuarios/5
@@ -246,20 +296,6 @@ namespace AetherEyeAPI.Controllers
         }
 
         [Authorize(Roles = "Administrador,Admin")]
-        [HttpPatch("{id}/estado")]
-        public async Task<IActionResult> CambiarEstadoUsuario(int id, [FromBody] CambiarEstadoUsuarioRequest request)
-        {
-            var usuario = await _context.Usuarios.FindAsync(id);
-            if (usuario == null)
-                return NotFound("Usuario no encontrado.");
-
-            usuario.EstaActivo = request.EstaActivo;
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Estado del usuario actualizado correctamente." });
-        }
-
-        [Authorize(Roles = "Administrador,Admin")]
         [HttpGet("con-roles")]
         public async Task<ActionResult<IEnumerable<object>>> GetUsuariosConRoles()
         {
@@ -274,7 +310,6 @@ namespace AetherEyeAPI.Controllers
                     u.Id,
                     u.NombreCompleto,
                     u.Correo,
-                    u.EstaActivo,
                     u.FechaRegistro,
                     Rol = new
                     {

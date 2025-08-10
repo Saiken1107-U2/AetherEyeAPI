@@ -1,4 +1,5 @@
 using AetherEyeAPI.Data;
+using AetherEyeAPI.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -10,12 +11,15 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 
+// Registrar el servicio de correo
+builder.Services.AddScoped<IEmailService, EmailService>();
+
 // Configurar CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngularApp", policy =>
     {
-        policy.WithOrigins("http://localhost:4200") // Puerto típico de Angular
+        policy.WithOrigins("http://localhost:4200", "http://localhost:51887", "http://localhost:54509") // Puertos de Angular
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials();

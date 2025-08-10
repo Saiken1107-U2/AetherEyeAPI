@@ -35,7 +35,7 @@ namespace AetherEyeAPI.Controllers
                     p.Nombre,
                     p.Descripcion,
                     p.ImagenUrl,
-                    PrecioUnitario = p.PrecioVenta, // Mapear para el frontend
+                    PrecioUnitario = p.PrecioVenta,
                     p.FechaRegistro
                 })
                 .OrderBy(p => p.Nombre)
