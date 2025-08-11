@@ -171,11 +171,41 @@ namespace AetherEyeAPI.Controllers
                     d.Titulo,
                     d.Descripcion,
                     d.UrlArchivo,
-                    d.Fecha
+                    d.Fecha,
+                    nombre = d.Titulo,
+                    nombreArchivo = d.Titulo + ".pdf", // Asumiendo que son PDFs
+                    url = d.UrlArchivo,
+                    fechaCreacion = d.Fecha,
+                    size = 1024000, // Tamaño simulado de 1MB
+                    tipoArchivo = "application/pdf"
                 })
                 .ToListAsync();
 
             return Ok(documentos);
+        }
+
+        [HttpGet("descargar/{id}")]
+        public async Task<IActionResult> DescargarDocumento(int id)
+        {
+            try
+            {
+                var documento = await _context.Documentos.FindAsync(id);
+                if (documento == null)
+                {
+                    return NotFound("Documento no encontrado");
+                }
+
+                // Por ahora simularemos la descarga retornando el archivo
+                // En una implementación real, aquí cargarías el archivo desde el sistema de archivos o almacenamiento
+                string contenidoArchivo = $"Contenido del documento: {documento.Titulo}\nDescripción: {documento.Descripcion}";
+                byte[] archivoBytes = System.Text.Encoding.UTF8.GetBytes(contenidoArchivo);
+
+                return File(archivoBytes, "application/pdf", $"{documento.Titulo}.pdf");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error al descargar documento: {ex.Message}");
+            }
         }
 
     }

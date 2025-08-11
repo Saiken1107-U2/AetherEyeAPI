@@ -267,37 +267,6 @@ namespace AetherEyeAPI.Controllers
             }
         }
 
-        // Endpoint temporal para debug - eliminar en producción
-        [HttpGet("test/{usuarioId}")]
-        public async Task<IActionResult> TestComprasDelCliente(int usuarioId)
-        {
-            try
-            {
-                var todasLasVentas = await _context.Ventas.ToListAsync();
-                var ventasDelUsuario = await _context.Ventas
-                    .Where(v => v.UsuarioId == usuarioId)
-                    .ToListAsync();
-
-                return Ok(new
-                {
-                    TotalVentas = todasLasVentas.Count,
-                    VentasDelUsuario = ventasDelUsuario.Count,
-                    UsuarioId = usuarioId,
-                    Ventas = ventasDelUsuario.Select(v => new
-                    {
-                        v.Id,
-                        v.UsuarioId,
-                        v.Fecha,
-                        v.Total
-                    })
-                });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Error en test", detail = ex.Message });
-            }
-        }
-
         [HttpGet("cliente/{usuarioId}/detalle/{ventaId}")]
         [Authorize] // Requiere estar autenticado
         public async Task<IActionResult> ObtenerDetalleCompra(int usuarioId, int ventaId)
