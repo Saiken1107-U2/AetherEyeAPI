@@ -24,5 +24,71 @@ namespace AetherEyeAPI.Data
         public DbSet<Comentario> Comentarios { get; set; }
         public DbSet<Documento> Documentos { get; set; }
         public DbSet<Faq> Faqs { get; set; }
+        public DbSet<MovimientoStock> MovimientosStock { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            // Configuración para Insumo
+            modelBuilder.Entity<Insumo>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Nombre).HasMaxLength(100);
+                entity.Property(e => e.Descripcion).HasMaxLength(500);
+                entity.Property(e => e.CodigoInterno).HasMaxLength(50);
+                entity.Property(e => e.Categoria).HasMaxLength(50);
+                entity.Property(e => e.UnidadMedida).HasMaxLength(20);
+                entity.Property(e => e.CostoUnitario).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.StockActual).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.StockMinimo).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.StockMaximo).HasColumnType("decimal(18,2)");
+                
+                // Mapear la propiedad FechaActualizacion a la columna FechaUltimaActualizacion
+                entity.Property(e => e.FechaActualizacion).HasColumnName("FechaUltimaActualizacion");
+
+                // Relación con Proveedor
+                entity.HasOne(e => e.Proveedor)
+                      .WithMany()
+                      .HasForeignKey(e => e.ProveedorId)
+                      .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            // Configuración para Compra
+            modelBuilder.Entity<Compra>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Total).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.Estado).HasMaxLength(20);
+                entity.Property(e => e.NumeroFactura).HasMaxLength(50);
+                entity.Property(e => e.Observaciones).HasMaxLength(1000);
+
+                // Relación con Proveedor
+                entity.HasOne(e => e.Proveedor)
+                      .WithMany()
+                      .HasForeignKey(e => e.ProveedorId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                // Relación con DetalleCompras
+                entity.HasMany(e => e.DetallesCompra)
+                      .WithOne(dc => dc.Compra)
+                      .HasForeignKey(dc => dc.CompraId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configuración para DetalleCompra
+            modelBuilder.Entity<DetalleCompra>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Cantidad).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.CostoUnitario).HasColumnType("decimal(18,2)");
+
+                // Relación con Insumo
+                entity.HasOne(e => e.Insumo)
+                      .WithMany()
+                      .HasForeignKey(e => e.InsumoId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+        }
     }
 }

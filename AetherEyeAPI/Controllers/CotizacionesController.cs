@@ -126,10 +126,10 @@ namespace AetherEyeAPI.Controllers
 
             foreach (var item in receta)
             {
-                if (item.Insumo == null || item.Insumo.StockActual <= 0)
+                if (item.Insumo == null || (item.Insumo.StockActual ?? 0) <= 0)
                     return BadRequest($"El insumo '{item.Insumo?.Nombre}' no tiene stock suficiente para calcular el costo promedio");
 
-                decimal costoPromedio = item.Insumo.CostoUnitario;
+                decimal costoPromedio = item.Insumo.CostoUnitario ?? 0;
 
                 var detalle = new CotizacionDetalleResponse
                 {

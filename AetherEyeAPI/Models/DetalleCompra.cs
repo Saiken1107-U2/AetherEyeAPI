@@ -10,7 +10,7 @@
         public int InsumoId { get; set; }
         public Insumo? Insumo { get; set; }
 
-        public int Cantidad { get; set; }
+        public decimal Cantidad { get; set; }
         public decimal CostoUnitario { get; set; }
 
         public decimal Subtotal => Cantidad * CostoUnitario;
