@@ -24,23 +24,90 @@ namespace AetherEyeAPI.Controllers
 
         // GET: api/Ventas
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Venta>>> GetVentas()
+        public async Task<ActionResult<IEnumerable<VentaResponse>>> GetVentas()
         {
-            return await _context.Ventas.ToListAsync();
+            var ventas = await _context.Ventas
+                .Include(v => v.Usuario)
+                .Include(v => v.DetallesVenta)
+                    .ThenInclude(dv => dv.Producto)
+                .OrderByDescending(v => v.Fecha)
+                .ToListAsync();
+
+            var ventasResponse = ventas.Select(v => new VentaResponse
+            {
+                Id = v.Id,
+                NombreCliente = v.NombreCliente ?? v.Usuario?.NombreCompleto,
+                CorreoCliente = v.CorreoCliente ?? v.Usuario?.Correo,
+                TelefonoCliente = v.TelefonoCliente,
+                DireccionCliente = v.DireccionCliente,
+                Fecha = v.Fecha,
+                Estado = v.Estado,
+                MetodoPago = v.MetodoPago,
+                Observaciones = v.Observaciones,
+                NumeroFactura = v.NumeroFactura,
+                Subtotal = v.Subtotal,
+                Impuestos = v.Impuestos,
+                Descuento = v.Descuento,
+                Total = v.Total,
+                VendedorNombre = v.Usuario?.NombreCompleto,
+                Productos = v.DetallesVenta.Select(dv => new DetalleVentaResponse
+                {
+                    Id = dv.Id,
+                    ProductoId = dv.ProductoId,
+                    ProductoNombre = dv.Producto?.Nombre,
+                    Cantidad = dv.Cantidad,
+                    PrecioUnitario = dv.PrecioUnitario,
+                    Subtotal = dv.Subtotal
+                }).ToList()
+            }).ToList();
+
+            return Ok(ventasResponse);
         }
 
         // GET: api/Ventas/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Venta>> GetVenta(int id)
+        public async Task<ActionResult<VentaResponse>> GetVenta(int id)
         {
-            var venta = await _context.Ventas.FindAsync(id);
+            var venta = await _context.Ventas
+                .Include(v => v.Usuario)
+                .Include(v => v.DetallesVenta)
+                    .ThenInclude(dv => dv.Producto)
+                .FirstOrDefaultAsync(v => v.Id == id);
 
             if (venta == null)
             {
                 return NotFound();
             }
 
-            return venta;
+            var ventaResponse = new VentaResponse
+            {
+                Id = venta.Id,
+                NombreCliente = venta.NombreCliente ?? venta.Usuario?.NombreCompleto,
+                CorreoCliente = venta.CorreoCliente ?? venta.Usuario?.Correo,
+                TelefonoCliente = venta.TelefonoCliente,
+                DireccionCliente = venta.DireccionCliente,
+                Fecha = venta.Fecha,
+                Estado = venta.Estado,
+                MetodoPago = venta.MetodoPago,
+                Observaciones = venta.Observaciones,
+                NumeroFactura = venta.NumeroFactura,
+                Subtotal = venta.Subtotal,
+                Impuestos = venta.Impuestos,
+                Descuento = venta.Descuento,
+                Total = venta.Total,
+                VendedorNombre = venta.Usuario?.NombreCompleto,
+                Productos = venta.DetallesVenta.Select(dv => new DetalleVentaResponse
+                {
+                    Id = dv.Id,
+                    ProductoId = dv.ProductoId,
+                    ProductoNombre = dv.Producto?.Nombre,
+                    Cantidad = dv.Cantidad,
+                    PrecioUnitario = dv.PrecioUnitario,
+                    Subtotal = dv.Subtotal
+                }).ToList()
+            };
+
+            return Ok(ventaResponse);
         }
 
         // PUT: api/Ventas/5
@@ -106,22 +173,196 @@ namespace AetherEyeAPI.Controllers
             return _context.Ventas.Any(e => e.Id == id);
         }
 
+        // PUT: api/Ventas/5/estado
+        [HttpPut("{id}/estado")]
+        public async Task<IActionResult> ActualizarEstadoVenta(int id, [FromBody] ActualizarEstadoVentaRequest request)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var venta = await _context.Ventas.FindAsync(id);
+            if (venta == null)
+                return NotFound("Venta no encontrada");
+
+            venta.Estado = request.Estado;
+            if (!string.IsNullOrEmpty(request.Observaciones))
+                venta.Observaciones = request.Observaciones;
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                Id = venta.Id,
+                Estado = venta.Estado,
+                Observaciones = venta.Observaciones,
+                Mensaje = $"Estado actualizado a {request.Estado}"
+            });
+        }
+
+        // GET: api/Ventas/estadisticas
+        [HttpGet("estadisticas")]
+        public async Task<IActionResult> ObtenerEstadisticasVentas()
+        {
+            var hoy = DateTime.Today;
+            var inicioSemana = hoy.AddDays(-(int)hoy.DayOfWeek);
+            var inicioMes = new DateTime(hoy.Year, hoy.Month, 1);
+
+            var estadisticas = new
+            {
+                VentasHoy = await _context.Ventas.CountAsync(v => v.Fecha.Date == hoy),
+                VentasSemana = await _context.Ventas.CountAsync(v => v.Fecha >= inicioSemana),
+                VentasMes = await _context.Ventas.CountAsync(v => v.Fecha >= inicioMes),
+                
+                IngresosHoy = await _context.Ventas
+                    .Where(v => v.Fecha.Date == hoy && v.Estado != "Cancelado")
+                    .SumAsync(v => (decimal?)v.Total) ?? 0,
+                IngresosSemana = await _context.Ventas
+                    .Where(v => v.Fecha >= inicioSemana && v.Estado != "Cancelado")
+                    .SumAsync(v => (decimal?)v.Total) ?? 0,
+                IngresosMes = await _context.Ventas
+                    .Where(v => v.Fecha >= inicioMes && v.Estado != "Cancelado")
+                    .SumAsync(v => (decimal?)v.Total) ?? 0,
+
+                VentasPorEstado = await _context.Ventas
+                    .GroupBy(v => v.Estado)
+                    .Select(g => new { Estado = g.Key, Cantidad = g.Count() })
+                    .ToListAsync(),
+
+                ProductosMasVendidos = await _context.DetalleVentas
+                    .Include(dv => dv.Producto)
+                    .GroupBy(dv => new { dv.ProductoId, dv.Producto!.Nombre })
+                    .Select(g => new
+                    {
+                        ProductoId = g.Key.ProductoId,
+                        ProductoNombre = g.Key.Nombre,
+                        CantidadVendida = g.Sum(dv => dv.Cantidad),
+                        IngresoTotal = g.Sum(dv => dv.Cantidad * dv.PrecioUnitario)
+                    })
+                    .OrderByDescending(p => p.CantidadVendida)
+                    .Take(5)
+                    .ToListAsync()
+            };
+
+            return Ok(estadisticas);
+        }
+
+        // GET: api/Ventas/por-estado/{estado}
+        [HttpGet("por-estado/{estado}")]
+        public async Task<ActionResult<IEnumerable<VentaResponse>>> ObtenerVentasPorEstado(string estado)
+        {
+            var estadosValidos = new[] { "Pendiente", "Procesando", "Enviado", "Entregado", "Cancelado" };
+            if (!estadosValidos.Contains(estado))
+                return BadRequest("Estado no válido");
+
+            var ventas = await _context.Ventas
+                .Include(v => v.Usuario)
+                .Include(v => v.DetallesVenta)
+                    .ThenInclude(dv => dv.Producto)
+                .Where(v => v.Estado == estado)
+                .OrderByDescending(v => v.Fecha)
+                .ToListAsync();
+
+            var ventasResponse = ventas.Select(v => new VentaResponse
+            {
+                Id = v.Id,
+                NombreCliente = v.NombreCliente ?? v.Usuario?.NombreCompleto,
+                CorreoCliente = v.CorreoCliente ?? v.Usuario?.Correo,
+                TelefonoCliente = v.TelefonoCliente,
+                DireccionCliente = v.DireccionCliente,
+                Fecha = v.Fecha,
+                Estado = v.Estado,
+                MetodoPago = v.MetodoPago,
+                Observaciones = v.Observaciones,
+                NumeroFactura = v.NumeroFactura,
+                Subtotal = v.Subtotal,
+                Impuestos = v.Impuestos,
+                Descuento = v.Descuento,
+                Total = v.Total,
+                VendedorNombre = v.Usuario?.NombreCompleto,
+                Productos = v.DetallesVenta.Select(dv => new DetalleVentaResponse
+                {
+                    Id = dv.Id,
+                    ProductoId = dv.ProductoId,
+                    ProductoNombre = dv.Producto?.Nombre,
+                    Cantidad = dv.Cantidad,
+                    PrecioUnitario = dv.PrecioUnitario,
+                    Subtotal = dv.Subtotal
+                }).ToList()
+            }).ToList();
+
+            return Ok(ventasResponse);
+        }
+
+        // GET: api/Ventas/buscar?termino=abc
+        [HttpGet("buscar")]
+        public async Task<ActionResult<IEnumerable<VentaResponse>>> BuscarVentas([FromQuery] string termino)
+        {
+            if (string.IsNullOrWhiteSpace(termino))
+                return BadRequest("Debe proporcionar un término de búsqueda");
+
+            var ventas = await _context.Ventas
+                .Include(v => v.Usuario)
+                .Include(v => v.DetallesVenta)
+                    .ThenInclude(dv => dv.Producto)
+                .Where(v => 
+                    v.NombreCliente!.Contains(termino) ||
+                    v.CorreoCliente!.Contains(termino) ||
+                    v.NumeroFactura!.Contains(termino) ||
+                    v.Usuario!.NombreCompleto.Contains(termino))
+                .OrderByDescending(v => v.Fecha)
+                .ToListAsync();
+
+            var ventasResponse = ventas.Select(v => new VentaResponse
+            {
+                Id = v.Id,
+                NombreCliente = v.NombreCliente ?? v.Usuario?.NombreCompleto,
+                CorreoCliente = v.CorreoCliente ?? v.Usuario?.Correo,
+                TelefonoCliente = v.TelefonoCliente,
+                DireccionCliente = v.DireccionCliente,
+                Fecha = v.Fecha,
+                Estado = v.Estado,
+                MetodoPago = v.MetodoPago,
+                Observaciones = v.Observaciones,
+                NumeroFactura = v.NumeroFactura,
+                Subtotal = v.Subtotal,
+                Impuestos = v.Impuestos,
+                Descuento = v.Descuento,
+                Total = v.Total,
+                VendedorNombre = v.Usuario?.NombreCompleto,
+                Productos = v.DetallesVenta.Select(dv => new DetalleVentaResponse
+                {
+                    Id = dv.Id,
+                    ProductoId = dv.ProductoId,
+                    ProductoNombre = dv.Producto?.Nombre,
+                    Cantidad = dv.Cantidad,
+                    PrecioUnitario = dv.PrecioUnitario,
+                    Subtotal = dv.Subtotal
+                }).ToList()
+            }).ToList();
+
+            return Ok(ventasResponse);
+        }
+
         [HttpPost("registrar")]
         public async Task<IActionResult> RegistrarVenta([FromBody] VentaRequest request)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             if (request.Productos == null || !request.Productos.Any())
                 return BadRequest("Debe incluir al menos un producto en la venta.");
 
-            var venta = new Venta
-            {
-                UsuarioId = request.UsuarioId,
-                Fecha = DateTime.Now
-            };
+            // Obtener el usuario actual desde el token JWT
+            var usuarioIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (usuarioIdClaim == null)
+                return Unauthorized("Usuario no autenticado");
 
-            _context.Ventas.Add(venta);
-            await _context.SaveChangesAsync(); // para obtener venta.Id
+            if (!int.TryParse(usuarioIdClaim.Value, out int usuarioId))
+                return BadRequest("ID de usuario inválido");
 
-            decimal totalVenta = 0;
+            // Calcular subtotal
+            decimal subtotal = 0;
+            var detallesTemporales = new List<DetalleVenta>();
 
             foreach (var item in request.Productos)
             {
@@ -129,28 +370,92 @@ namespace AetherEyeAPI.Controllers
                 if (producto == null)
                     return NotFound($"Producto con ID {item.ProductoId} no encontrado.");
 
+                var precioUnitario = item.PrecioUnitario ?? producto.PrecioVenta;
+                
                 var detalle = new DetalleVenta
                 {
-                    VentaId = venta.Id,
                     ProductoId = item.ProductoId,
                     Cantidad = item.Cantidad,
-                    PrecioUnitario = item.PrecioUnitario
+                    PrecioUnitario = precioUnitario
                 };
 
-                _context.DetalleVentas.Add(detalle);
-                totalVenta += item.Cantidad * item.PrecioUnitario;
+                detallesTemporales.Add(detalle);
+                subtotal += item.Cantidad * precioUnitario;
             }
 
-            venta.Total = Math.Round(totalVenta, 2);
+            // Calcular impuestos (ejemplo: 19% IVA)
+            var impuestos = subtotal * 0.19m;
+            var total = subtotal - request.Descuento + impuestos;
+
+            // Generar número de factura
+            var numeroFactura = $"FAC-{DateTime.Now:yyyyMMdd}-{DateTime.Now.Ticks.ToString().Substring(10)}";
+
+            var venta = new Venta
+            {
+                UsuarioId = usuarioId,
+                NombreCliente = request.NombreCliente,
+                CorreoCliente = request.CorreoCliente,
+                TelefonoCliente = request.TelefonoCliente,
+                DireccionCliente = request.DireccionCliente,
+                MetodoPago = request.MetodoPago,
+                Observaciones = request.Observaciones,
+                Subtotal = subtotal,
+                Impuestos = impuestos,
+                Descuento = request.Descuento,
+                Total = Math.Round(total, 2),
+                NumeroFactura = numeroFactura,
+                Estado = "Pendiente",
+                Fecha = DateTime.Now
+            };
+
+            _context.Ventas.Add(venta);
+            await _context.SaveChangesAsync(); // para obtener venta.Id
+
+            // Agregar detalles de venta
+            foreach (var detalle in detallesTemporales)
+            {
+                detalle.VentaId = venta.Id;
+                _context.DetalleVentas.Add(detalle);
+            }
+
             await _context.SaveChangesAsync();
 
-            return Ok(new
+            // Cargar los datos completos para la respuesta
+            var ventaCompleta = await _context.Ventas
+                .Include(v => v.Usuario)
+                .Include(v => v.DetallesVenta)
+                    .ThenInclude(dv => dv.Producto)
+                .FirstOrDefaultAsync(v => v.Id == venta.Id);
+
+            var ventaResponse = new VentaResponse
             {
-                venta.Id,
-                venta.UsuarioId,
-                venta.Fecha,
-                venta.Total
-            });
+                Id = ventaCompleta!.Id,
+                NombreCliente = ventaCompleta.NombreCliente,
+                CorreoCliente = ventaCompleta.CorreoCliente,
+                TelefonoCliente = ventaCompleta.TelefonoCliente,
+                DireccionCliente = ventaCompleta.DireccionCliente,
+                Fecha = ventaCompleta.Fecha,
+                Estado = ventaCompleta.Estado,
+                MetodoPago = ventaCompleta.MetodoPago,
+                Observaciones = ventaCompleta.Observaciones,
+                NumeroFactura = ventaCompleta.NumeroFactura,
+                Subtotal = ventaCompleta.Subtotal,
+                Impuestos = ventaCompleta.Impuestos,
+                Descuento = ventaCompleta.Descuento,
+                Total = ventaCompleta.Total,
+                VendedorNombre = ventaCompleta.Usuario?.NombreCompleto,
+                Productos = ventaCompleta.DetallesVenta.Select(dv => new DetalleVentaResponse
+                {
+                    Id = dv.Id,
+                    ProductoId = dv.ProductoId,
+                    ProductoNombre = dv.Producto?.Nombre,
+                    Cantidad = dv.Cantidad,
+                    PrecioUnitario = dv.PrecioUnitario,
+                    Subtotal = dv.Subtotal
+                }).ToList()
+            };
+
+            return Ok(ventaResponse);
         }
 
         [HttpGet("todas")]
@@ -158,43 +463,91 @@ namespace AetherEyeAPI.Controllers
         {
             Console.WriteLine("🔧 VentasController - Obteniendo todas las ventas para admin...");
             
-            var ventas = await (from venta in _context.Ventas
-                              join usuario in _context.Usuarios on venta.UsuarioId equals usuario.Id
-                              join detalle in _context.DetalleVentas on venta.Id equals detalle.VentaId
-                              join producto in _context.Productos on detalle.ProductoId equals producto.Id
-                              select new
-                              {
-                                  id = venta.Id,
-                                  producto = producto.Nombre,
-                                  cliente = usuario.NombreCompleto,
-                                  cantidad = detalle.Cantidad,
-                                  total = venta.Total,
-                                  estado = "Completada", // Las ventas siempre están completadas
-                                  fecha = venta.Fecha // Mantenemos como DateTime para Entity Framework
-                              })
-                              .OrderByDescending(v => v.fecha)
-                              .ToListAsync();
-
-            // Convertir la fecha a string después de obtener los datos
-            var resultado = ventas.Select(v => new
+            try
             {
-                v.id,
-                v.producto,
-                v.cliente,
-                v.cantidad,
-                v.total,
-                v.estado,
-                fecha = v.fecha.ToString("yyyy-MM-dd")
-            }).ToList();
+                // Primero verificar si hay datos en las tablas
+                var ventasCount = await _context.Ventas.CountAsync();
+                var usuariosCount = await _context.Usuarios.CountAsync();
+                var detallesCount = await _context.DetalleVentas.CountAsync();
+                var productosCount = await _context.Productos.CountAsync();
+                
+                Console.WriteLine($"🔧 Conteos: Ventas={ventasCount}, Usuarios={usuariosCount}, DetalleVentas={detallesCount}, Productos={productosCount}");
+                
+                // Si no hay ventas, devolver lista vacía
+                if (ventasCount == 0)
+                {
+                    Console.WriteLine("🔧 No hay ventas en la base de datos");
+                    return Ok(new List<object>());
+                }
+                
+                var ventas = await (from venta in _context.Ventas
+                                  join usuario in _context.Usuarios on venta.UsuarioId equals usuario.Id
+                                  join detalle in _context.DetalleVentas on venta.Id equals detalle.VentaId
+                                  join producto in _context.Productos on detalle.ProductoId equals producto.Id
+                                  select new
+                                  {
+                                      id = venta.Id,
+                                      producto = producto.Nombre,
+                                      cliente = usuario.NombreCompleto,
+                                      cantidad = detalle.Cantidad,
+                                      total = venta.Subtotal + venta.Impuestos - venta.Descuento, // Calcular total en lugar de usar venta.Total
+                                      estado = venta.Estado ?? "Completada", 
+                                      fecha = venta.Fecha
+                                  })
+                                  .OrderByDescending(v => v.fecha)
+                                  .ToListAsync();
 
-            Console.WriteLine($"🔧 VentasController - Ventas encontradas: {resultado.Count}");
-            if (resultado.Any())
-            {
-                var primeraVenta = resultado.First();
-                Console.WriteLine($"🔧 Primera venta: Producto={primeraVenta.producto}, Cliente={primeraVenta.cliente}, Cantidad={primeraVenta.cantidad}");
+                // Convertir la fecha a string después de obtener los datos
+                var resultado = ventas.Select(v => new
+                {
+                    v.id,
+                    v.producto,
+                    v.cliente,
+                    v.cantidad,
+                    v.total,
+                    v.estado,
+                    fecha = v.fecha.ToString("yyyy-MM-dd")
+                }).ToList();
+
+                Console.WriteLine($"🔧 VentasController - Ventas encontradas: {resultado.Count}");
+                if (resultado.Any())
+                {
+                    var primeraVenta = resultado.First();
+                    Console.WriteLine($"🔧 Primera venta: Producto={primeraVenta.producto}, Cliente={primeraVenta.cliente}, Cantidad={primeraVenta.cantidad}");
+                }
+
+                return Ok(resultado);
             }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"🚨 Error en ObtenerTodasLasVentas: {ex.Message}");
+                Console.WriteLine($"🚨 Stack trace: {ex.StackTrace}");
+                return StatusCode(500, new { error = "Error interno del servidor", message = ex.Message });
+            }
+        }
 
-            return Ok(resultado);
+        // Endpoint temporal sin autenticación para debugging
+        [HttpGet("test-conexion")]
+        public async Task<IActionResult> TestConexion()
+        {
+            Console.WriteLine("🔧 VentasController - Test de conexión iniciado...");
+            
+            try
+            {
+                var ventasCount = await _context.Ventas.CountAsync();
+                Console.WriteLine($"🔧 Test exitoso - Ventas encontradas: {ventasCount}");
+                
+                return Ok(new { 
+                    message = "Conexión exitosa", 
+                    ventasCount = ventasCount,
+                    timestamp = DateTime.Now 
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"🚨 Error en test de conexión: {ex.Message}");
+                return StatusCode(500, new { error = ex.Message });
+            }
         }
 
         [HttpGet("detalladas")]

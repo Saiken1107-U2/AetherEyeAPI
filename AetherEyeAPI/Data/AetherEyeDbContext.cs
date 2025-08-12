@@ -89,6 +89,105 @@ namespace AetherEyeAPI.Data
                       .HasForeignKey(e => e.InsumoId)
                       .OnDelete(DeleteBehavior.Restrict);
             });
+
+            // Configuración para Receta (Sistema IoT simplificado)
+            modelBuilder.Entity<Receta>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.CantidadNecesaria).IsRequired();
+                entity.Property(e => e.UnidadMedida).HasMaxLength(50).IsRequired();
+                entity.Property(e => e.FechaCreacion).IsRequired();
+
+                // Relación con Producto principal
+                entity.HasOne(e => e.Producto)
+                      .WithMany()
+                      .HasForeignKey(e => e.ProductoId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                // Relación con Insumo (requerido)
+                entity.HasOne(e => e.Insumo)
+                      .WithMany()
+                      .HasForeignKey(e => e.InsumoId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                // Índice para evitar duplicados
+                entity.HasIndex(e => new { e.ProductoId, e.InsumoId }).IsUnique();
+            });
+
+            // Configuración para Venta
+            modelBuilder.Entity<Venta>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Total).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.Subtotal).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.Impuestos).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.Descuento).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.Estado).HasMaxLength(50).HasDefaultValue("Pendiente");
+                entity.Property(e => e.NombreCliente).HasMaxLength(100);
+                entity.Property(e => e.CorreoCliente).HasMaxLength(100);
+                entity.Property(e => e.TelefonoCliente).HasMaxLength(20);
+                entity.Property(e => e.DireccionCliente).HasMaxLength(200);
+                entity.Property(e => e.MetodoPago).HasMaxLength(50);
+                entity.Property(e => e.NumeroFactura).HasMaxLength(50);
+                entity.Property(e => e.Observaciones).HasMaxLength(1000);
+
+                // Relación con Usuario
+                entity.HasOne(e => e.Usuario)
+                      .WithMany()
+                      .HasForeignKey(e => e.UsuarioId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                // Relación con DetalleVentas
+                entity.HasMany(e => e.DetallesVenta)
+                      .WithOne(dv => dv.Venta)
+                      .HasForeignKey(dv => dv.VentaId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configuración para DetalleVenta
+            modelBuilder.Entity<DetalleVenta>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Cantidad).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.PrecioUnitario).HasColumnType("decimal(18,2)");
+
+                // Relación con Producto
+                entity.HasOne(e => e.Producto)
+                      .WithMany()
+                      .HasForeignKey(e => e.ProductoId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // Configuración para Comentario
+            modelBuilder.Entity<Comentario>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.ComentarioTexto).HasMaxLength(1000).IsRequired();
+                entity.Property(e => e.EstadoSeguimiento).HasMaxLength(50).HasDefaultValue("Pendiente");
+                entity.Property(e => e.RespuestaAdmin).HasMaxLength(2000);
+                entity.Property(e => e.NotasInternas).HasMaxLength(1000);
+                entity.Property(e => e.CategoriaProblema).HasMaxLength(100);
+                entity.Property(e => e.Prioridad).HasDefaultValue(2);
+                entity.Property(e => e.RequiereAccion).HasDefaultValue(false);
+
+                // Relación con Usuario (cliente)
+                entity.HasOne(e => e.Usuario)
+                      .WithMany()
+                      .HasForeignKey(e => e.UsuarioId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                // Relación con Producto
+                entity.HasOne(e => e.Producto)
+                      .WithMany()
+                      .HasForeignKey(e => e.ProductoId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                // Relación con Admin (Usuario que responde)
+                entity.HasOne(e => e.Admin)
+                      .WithMany()
+                      .HasForeignKey(e => e.AdminId)
+                      .OnDelete(DeleteBehavior.SetNull);
+            });
         }
     }
 }

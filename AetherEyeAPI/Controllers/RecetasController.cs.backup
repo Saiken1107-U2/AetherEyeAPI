@@ -1,0 +1,907 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using AetherEyeAPI.Data;
+using AetherEyeAPI.Models;
+
+namespace AetherEyeAPI.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class RecetasController : ControllerBase
+    {
+        private readonly AetherEyeDbContext _context;
+
+        public RecetasController(AetherEyeDbContext context)
+        {
+            _context = context;
+        }
+
+        // GET: api/Recetas
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<object>>> GetRecetas()
+        {
+            var recetas = await _context.Recetas
+                .Include(r => r.Producto)
+                .Include(r => r.Insumo)
+                .Where(r => r.Producto != null && r.Insumo != null)
+                .Select(r => new
+                {
+                    r.Id,
+                    r.ProductoId,
+                    Producto = new
+                    {
+                        r.Producto!.Id,
+                        r.Producto.Nombre,
+                        PrecioUnitario = r.Producto.PrecioVenta
+                    },
+                    r.InsumoId,
+                    Insumo = new
+                    {
+                        r.Insumo!.Id,
+                        r.Insumo.Nombre,
+                        r.Insumo.CostoUnitario,
+                        r.Insumo.UnidadMedida,
+                        r.Insumo.StockActual
+                    },
+                    r.CantidadNecesaria
+                })
+                .ToListAsync();
+
+            return Ok(recetas);
+        }
+
+        // GET: api/Recetas/producto/5
+        [HttpGet("producto/{productoId}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetRecetasPorProducto(int productoId)
+        {
+            var recetas = await _context.Recetas
+                .Include(r => r.Producto)
+                .Include(r => r.Insumo)
+                .Where(r => r.ProductoId == productoId && r.Producto != null && r.Insumo != null)
+                .Select(r => new
+                {
+                    r.Id,
+                    r.ProductoId,
+                    Producto = new
+                    {
+                        r.Producto!.Id,
+                        r.Producto.Nombre,
+                        PrecioUnitario = r.Producto.PrecioVenta
+                    },
+                    r.InsumoId,
+                    Insumo = new
+                    {
+                        r.Insumo!.Id,
+                        r.Insumo.Nombre,
+                        r.Insumo.CostoUnitario,
+                        r.Insumo.UnidadMedida,
+                        r.Insumo.StockActual
+                    },
+                    r.CantidadNecesaria
+                })
+                .ToListAsync();
+
+            return Ok(recetas);
+        }
+
+        // GET: api/Recetas/completa/5
+        [HttpGet("completa/{productoId}")]
+        public async Task<ActionResult<object>> GetRecetaCompleta(int productoId)
+        {
+            var producto = await _context.Productos.FindAsync(productoId);
+            if (producto == null)
+            {
+                return NotFound("Producto no encontrado");
+            }
+
+            var recetas = await _context.Recetas
+                .Include(r => r.Insumo)
+                .Where(r => r.ProductoId == productoId && r.Insumo != null)
+                .Select(r => new
+                {
+                    r.Id,
+                    r.ProductoId,
+                    r.InsumoId,
+                    Insumo = new
+                    {
+                        r.Insumo!.Id,
+                        r.Insumo.Nombre,
+                        r.Insumo.CostoUnitario,
+                        r.Insumo.UnidadMedida,
+                        r.Insumo.StockActual
+                    },
+                    r.CantidadNecesaria
+                })
+                .ToListAsync();
+
+            var costoTotal = recetas.Sum(r => r.CantidadNecesaria * r.Insumo.CostoUnitario);
+            var margenUtilidad = producto.PrecioVenta > 0 ? 
+                ((producto.PrecioVenta - costoTotal) / producto.PrecioVenta) * 100 : 0;
+
+            var recetaCompleta = new
+            {
+                Producto = new
+                {
+                    producto.Id,
+                    producto.Nombre,
+                    PrecioUnitario = producto.PrecioVenta
+                },
+                Recetas = recetas,
+                CostoTotal = costoTotal,
+                MargenUtilidad = margenUtilidad
+            };
+
+            return Ok(recetaCompleta);
+        }
+
+        // GET: api/Recetas/costo/5
+        [HttpGet("costo/{productoId}")]
+        public async Task<ActionResult<object>> GetCostoProducto(int productoId)
+        {
+            var producto = await _context.Productos.FindAsync(productoId);
+            if (producto == null)
+            {
+                return NotFound("Producto no encontrado");
+            }
+
+            var costoTotal = await _context.Recetas
+                .Include(r => r.Insumo)
+                .Where(r => r.ProductoId == productoId && r.Insumo != null)
+                .SumAsync(r => r.CantidadNecesaria * r.Insumo!.CostoUnitario);
+
+            var margenUtilidad = producto.PrecioVenta > 0 ? 
+                ((producto.PrecioVenta - costoTotal) / producto.PrecioVenta) * 100 : 0;
+
+            return Ok(new
+            {
+                CostoTotal = costoTotal,
+                MargenUtilidad = margenUtilidad
+            });
+        }
+
+        // GET: api/Recetas/5
+        [HttpGet("{id}")]
+        public async Task<ActionResult<Receta>> GetReceta(int id)
+        {
+            var receta = await _context.Recetas.FindAsync(id);
+
+            if (receta == null)
+            {
+                return NotFound();
+            }
+
+            return receta;
+        }
+
+        // PUT: api/Recetas/5
+        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
+        [HttpPut("{id}")]
+        public async Task<IActionResult> PutReceta(int id, Receta receta)
+        {
+            if (id != receta.Id)
+            {
+                return BadRequest("El ID del parámetro no coincide con el ID de la receta");
+            }
+
+            // Validaciones básicas
+            if (receta.ProductoId <= 0)
+            {
+                return BadRequest("ProductoId es requerido y debe ser mayor a 0");
+            }
+
+            if (!receta.InsumoId.HasValue && !receta.SubproductoId.HasValue)
+            {
+                return BadRequest("Debe especificar InsumoId o SubproductoId");
+            }
+
+            if (receta.InsumoId.HasValue && receta.SubproductoId.HasValue)
+            {
+                return BadRequest("No puede especificar tanto InsumoId como SubproductoId");
+            }
+
+            if (receta.CantidadNecesaria <= 0)
+            {
+                return BadRequest("CantidadNecesaria debe ser mayor a 0");
+            }
+
+            // Verificar que el producto existe
+            var productoExiste = await _context.Productos.AnyAsync(p => p.Id == receta.ProductoId);
+            if (!productoExiste)
+            {
+                return BadRequest("El producto especificado no existe");
+            }
+
+            // Verificar que el insumo existe (si se especifica)
+            if (receta.InsumoId.HasValue)
+            {
+                var insumoExiste = await _context.Insumos.AnyAsync(i => i.Id == receta.InsumoId.Value);
+                if (!insumoExiste)
+                {
+                    return BadRequest("El insumo especificado no existe");
+                }
+            }
+
+            // Verificar que el subproducto existe (si se especifica)
+            if (receta.SubproductoId.HasValue)
+            {
+                var subproductoExiste = await _context.Productos.AnyAsync(p => p.Id == receta.SubproductoId.Value);
+                if (!subproductoExiste)
+                {
+                    return BadRequest("El subproducto especificado no existe");
+                }
+            }
+
+            _context.Entry(receta).State = EntityState.Modified;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!RecetaExists(id))
+                {
+                    return NotFound("La receta no fue encontrada");
+                }
+                else
+                {
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                return BadRequest($"Error al actualizar la receta: {ex.Message}");
+            }
+
+            return NoContent();
+        }
+
+        // POST: api/Recetas
+        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
+        [HttpPost]
+        public async Task<ActionResult<Receta>> PostReceta(Receta receta)
+        {
+            // Validaciones básicas para sistema IoT
+            if (receta.ProductoId <= 0)
+            {
+                return BadRequest("ProductoId es requerido y debe ser mayor a 0");
+            }
+
+            if (receta.InsumoId <= 0)
+            {
+                return BadRequest("InsumoId es requerido y debe ser mayor a 0");
+            }
+
+            if (receta.CantidadNecesaria <= 0)
+            {
+                return BadRequest("CantidadNecesaria debe ser mayor a 0");
+            }
+
+            if (string.IsNullOrWhiteSpace(receta.UnidadMedida))
+            {
+                return BadRequest("UnidadMedida es requerida");
+            }
+
+            // Verificar que el producto existe
+            var productoExiste = await _context.Productos.AnyAsync(p => p.Id == receta.ProductoId);
+            if (!productoExiste)
+            {
+                return BadRequest("El producto especificado no existe");
+            }
+
+            // Verificar que el insumo existe
+            var insumoExiste = await _context.Insumos.AnyAsync(i => i.Id == receta.InsumoId);
+            if (!insumoExiste)
+            {
+                return BadRequest("El insumo especificado no existe");
+            }
+
+            // Verificar duplicados
+            var existeReceta = await _context.Recetas.AnyAsync(r => 
+                r.ProductoId == receta.ProductoId && 
+                r.InsumoId == receta.InsumoId);
+            
+            if (existeReceta)
+            {
+                return BadRequest("Ya existe una receta con la misma combinación de producto e insumo");
+            }
+
+            // Asignar valores por defecto
+            receta.FechaCreacion = DateTime.Now;
+            
+            try
+            {
+                _context.Recetas.Add(receta);
+                await _context.SaveChangesAsync();
+
+                return CreatedAtAction("GetReceta", new { id = receta.Id }, receta);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest($"Error al crear la receta: {ex.Message}");
+            }
+        }
+
+        // GET: api/Recetas/diagnóstico
+        [HttpGet("diagnostico")]
+        public async Task<ActionResult<object>> GetDiagnostico()
+        {
+            try
+            {
+                var totalRecetas = await _context.Recetas.CountAsync();
+                var totalProductos = await _context.Productos.CountAsync();
+                var totalInsumos = await _context.Insumos.CountAsync();
+
+                // Problemas potenciales
+                var recetasSinInsumoNiSubproducto = await _context.Recetas
+                    .Where(r => !r.InsumoId.HasValue && !r.SubproductoId.HasValue)
+                    .CountAsync();
+
+                var recetasConAmbos = await _context.Recetas
+                    .Where(r => r.InsumoId.HasValue && r.SubproductoId.HasValue)
+                    .CountAsync();
+
+                var recetasConCantidadCero = await _context.Recetas
+                    .Where(r => r.CantidadNecesaria <= 0)
+                    .CountAsync();
+
+                return Ok(new
+                {
+                    EstadisticasGenerales = new
+                    {
+                        TotalRecetas = totalRecetas,
+                        TotalProductos = totalProductos,
+                        TotalInsumos = totalInsumos
+                    },
+                    ProblemasDetectados = new
+                    {
+                        RecetasSinInsumoNiSubproducto = recetasSinInsumoNiSubproducto,
+                        RecetasConAmbosComponents = recetasConAmbos,
+                        RecetasConCantidadCero = recetasConCantidadCero
+                    },
+                    ConfiguracionDB = new
+                    {
+                        ConexionValida = _context.Database.CanConnect(),
+                        BaseDatos = _context.Database.GetDbConnection().Database
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest($"Error en diagnóstico: {ex.Message}");
+            }
+        }
+
+        // POST: api/Recetas/prueba
+        [HttpPost("prueba")]
+        public ActionResult<object> PostRecetaPrueba([FromBody] object recetaData)
+        {
+            try
+            {
+                return Ok(new
+                {
+                    Mensaje = "Endpoint de prueba funcionando",
+                    DatosRecibidos = recetaData,
+                    Timestamp = DateTime.Now
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest($"Error en prueba: {ex.Message}");
+            }
+        }
+
+        // DELETE: api/Recetas/5
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteReceta(int id)
+        {
+            var receta = await _context.Recetas.FindAsync(id);
+            if (receta == null)
+            {
+                return NotFound();
+            }
+
+            _context.Recetas.Remove(receta);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        private bool RecetaExists(int id)
+        {
+            return _context.Recetas.Any(e => e.Id == id);
+        }
+    }
+}
+            {
+                return NotFound("Producto no encontrado");
+            }
+
+            var explosion = await CalcularExplosionRecursiva(
+                request.ProductoId, 
+                request.CantidadProductos, 
+                0, 
+                request.IncluirSubrecetas,
+                request.VerificarStock
+            );
+
+            var resultado = new ExplosionMateriales
+            {
+                ProductoId = request.ProductoId,
+                ProductoNombre = producto.Nombre,
+                CantidadProductos = request.CantidadProductos,
+                Items = explosion.Items,
+                CostoTotalMateriales = explosion.Items.Sum(i => i.CostoTotal),
+                CostoTotalConMerma = explosion.Items.Sum(i => i.CostoTotal * (1 + i.PorcentajeMerma / 100)),
+                TieneFaltantes = explosion.Items.Any(i => i.TieneFaltante),
+                AlertasFaltantes = explosion.Items.Where(i => i.TieneFaltante)
+                    .Select(i => $"{i.Nombre}: Necesario {i.CantidadConMerma} {i.UnidadMedida}, Disponible {i.StockActual}")
+                    .ToList()
+            };
+
+            return Ok(resultado);
+        }
+
+        // GET: api/Recetas/niveles-bom/{productoId}
+        [HttpGet("niveles-bom/{productoId}")]
+        public async Task<ActionResult<object>> GetNivelesBOM(int productoId)
+        {
+            var producto = await _context.Productos.FindAsync(productoId);
+            if (producto == null)
+            {
+                return NotFound("Producto no encontrado");
+            }
+
+            var niveles = await ObtenerNivelesBOMRecursivo(productoId);
+            
+            return Ok(new
+            {
+                ProductoId = productoId,
+                ProductoNombre = producto.Nombre,
+                NivelesEstructura = niveles,
+                NivelMaximo = niveles.Any() ? niveles.Max(n => n.Nivel) : 0,
+                TotalComponentes = niveles.Count
+            });
+        }
+
+        private async Task<List<NivelBOM>> ObtenerNivelesBOMRecursivo(int productoId, int nivelActual = 0)
+        {
+            var niveles = new List<NivelBOM>();
+            
+            var recetas = await _context.Recetas
+                .Include(r => r.Insumo)
+                .Include(r => r.Subproducto)
+                .Where(r => r.ProductoId == productoId)
+                .OrderBy(r => r.OrdenSecuencia)
+                .ToListAsync();
+
+            foreach (var receta in recetas)
+            {
+                var nivel = new NivelBOM
+                {
+                    Nivel = nivelActual,
+                    ProductoId = productoId,
+                    ComponenteId = receta.InsumoId ?? receta.SubproductoId ?? 0,
+                    ComponenteNombre = receta.Insumo?.Nombre ?? receta.Subproducto?.Nombre ?? "Desconocido",
+                    TipoComponente = receta.InsumoId.HasValue ? "Insumo" : "Subproducto",
+                    CantidadNecesaria = receta.CantidadNecesaria,
+                    OrdenSecuencia = receta.OrdenSecuencia,
+                    EsCritico = receta.EsCritico,
+                    TiempoPreparacion = receta.TiempoPreparacion ?? 0
+                };
+                
+                niveles.Add(nivel);
+
+                // Si es un subproducto, obtener sus componentes recursivamente
+                if (receta.SubproductoId.HasValue)
+                {
+                    var subNiveles = await ObtenerNivelesBOMRecursivo(receta.SubproductoId.Value, nivelActual + 1);
+                    niveles.AddRange(subNiveles);
+                }
+            }
+
+            return niveles;
+        }
+
+        // GET: api/Recetas/ruta-critica/{productoId}
+        [HttpGet("ruta-critica/{productoId}")]
+        public async Task<ActionResult<object>> GetRutaCritica(int productoId)
+        {
+            var componentesCriticos = await _context.Recetas
+                .Include(r => r.Insumo)
+                .Include(r => r.Subproducto)
+                .Where(r => r.ProductoId == productoId && r.EsCritico)
+                .OrderBy(r => r.OrdenSecuencia)
+                .Select(r => new
+                {
+                    ComponenteId = r.InsumoId ?? r.SubproductoId,
+                    ComponenteNombre = r.Insumo != null ? r.Insumo.Nombre : r.Subproducto!.Nombre,
+                    Tipo = r.InsumoId.HasValue ? "Insumo" : "Subproducto",
+                    r.CantidadNecesaria,
+                    r.OrdenSecuencia,
+                    r.TiempoPreparacion,
+                    r.Observaciones,
+                    StockActual = r.Insumo != null ? r.Insumo.StockActual : 0
+                })
+                .ToListAsync();
+
+            var tiempoTotalCritico = componentesCriticos.Sum(c => c.TiempoPreparacion ?? 0);
+
+            return Ok(new
+            {
+                ProductoId = productoId,
+                ComponentesCriticos = componentesCriticos,
+                TiempoTotalCritico = tiempoTotalCritico,
+                AlertaStock = componentesCriticos.Where(c => c.StockActual <= 5).ToList()
+            });
+        }
+
+        // GET: api/Recetas/tiempo-produccion/{productoId}/{cantidad}
+        [HttpGet("tiempo-produccion/{productoId}/{cantidad}")]
+        public async Task<ActionResult<object>> GetTiempoProduccion(int productoId, int cantidad)
+        {
+            var recetas = await _context.Recetas
+                .Include(r => r.Insumo)
+                .Include(r => r.Subproducto)
+                .Where(r => r.ProductoId == productoId)
+                .OrderBy(r => r.OrdenSecuencia)
+                .ToListAsync();
+
+            var tiempoTotal = recetas.Sum(r => (r.TiempoPreparacion ?? 0) * cantidad);
+            var tiempoCritico = recetas.Where(r => r.EsCritico).Sum(r => (r.TiempoPreparacion ?? 0) * cantidad);
+
+            return Ok(new
+            {
+                ProductoId = productoId,
+                CantidadSolicitada = cantidad,
+                TiempoTotalMinutos = tiempoTotal,
+                TiempoTotalHoras = Math.Round(tiempoTotal / 60, 2),
+                TiempoCriticoMinutos = tiempoCritico,
+                TiempoCriticoHoras = Math.Round(tiempoCritico / 60, 2),
+                FechaEstimadaFinalizacion = DateTime.Now.AddMinutes((double)tiempoTotal),
+                ProcesosDetallados = recetas.Select(r => new
+                {
+                    ComponenteNombre = r.Insumo?.Nombre ?? r.Subproducto?.Nombre ?? "Desconocido",
+                    OrdenSecuencia = r.OrdenSecuencia,
+                    TiempoUnitario = r.TiempoPreparacion ?? 0,
+                    TiempoTotal = (r.TiempoPreparacion ?? 0) * cantidad,
+                    EsCritico = r.EsCritico
+                }).ToList()
+            });
+        }
+
+        // POST: api/Recetas/optimizar-secuencia
+        [HttpPost("optimizar-secuencia")]
+        public async Task<ActionResult<object>> OptimizarSecuencia([FromBody] OptimizacionRequest request)
+        {
+            var recetas = await _context.Recetas
+                .Include(r => r.Insumo)
+                .Include(r => r.Subproducto)
+                .Where(r => r.ProductoId == request.ProductoId)
+                .ToListAsync();
+
+            // Ordenar por criterio seleccionado
+            IEnumerable<Receta> recetasOptimizadas = request.CriterioOptimizacion switch
+            {
+                "TiempoCritico" => recetas.OrderByDescending(r => r.EsCritico).ThenBy(r => r.TiempoPreparacion),
+                "Costo" => recetas.OrderBy(r => r.Insumo?.CostoUnitario ?? 0),
+                "Stock" => recetas.OrderBy(r => r.Insumo?.StockActual ?? 999),
+                "Merma" => recetas.OrderBy(r => r.PorcentajeMerma),
+                _ => recetas.OrderBy(r => r.OrdenSecuencia)
+            };
+
+            // Actualizar orden de secuencia
+            var orden = 1;
+            foreach (var receta in recetasOptimizadas)
+            {
+                receta.OrdenSecuencia = orden++;
+            }
+
+            if (request.AplicarCambios)
+            {
+                await _context.SaveChangesAsync();
+            }
+
+            return Ok(new
+            {
+                ProductoId = request.ProductoId,
+                CriterioAplicado = request.CriterioOptimizacion,
+                SecuenciaOptimizada = recetasOptimizadas.Select(r => new
+                {
+                    r.Id,
+                    ComponenteNombre = r.Insumo?.Nombre ?? r.Subproducto?.Nombre ?? "Desconocido",
+                    OrdenAnterior = r.OrdenSecuencia,
+                    OrdenNuevo = orden,
+                    r.EsCritico,
+                    r.TiempoPreparacion
+                }).ToList(),
+                CambiosAplicados = request.AplicarCambios
+            });
+        }
+
+        // GET: api/Recetas/solicitud-compra/{productoId}/{cantidad}
+        [HttpGet("solicitud-compra/{productoId}/{cantidad}")]
+        public async Task<ActionResult<SolicitudCompraAutomatica>> GenerarSolicitudCompra(int productoId, int cantidad)
+        {
+            var explosion = await CalcularExplosionRecursiva(productoId, cantidad, 0, true, true);
+            
+            var itemsFaltantes = explosion.Items
+                .Where(i => i.TieneFaltante && i.InsumoId.HasValue)
+                .Select(i => new ItemSolicitudCompra
+                {
+                    InsumoId = i.InsumoId!.Value,
+                    InsumoNombre = i.Nombre,
+                    CantidadFaltante = Math.Max(0, i.CantidadConMerma - i.StockActual),
+                    UnidadMedida = i.UnidadMedida,
+                    CostoUnitarioEstimado = i.CostoUnitario,
+                    MontoTotal = Math.Max(0, i.CantidadConMerma - i.StockActual) * i.CostoUnitario,
+                    EsCritico = i.EsCritico
+                })
+                .ToList();
+
+            var solicitud = new SolicitudCompraAutomatica
+            {
+                ProductoObjetivo = productoId,
+                CantidadObjetivo = cantidad,
+                Items = itemsFaltantes,
+                MontoEstimado = itemsFaltantes.Sum(i => i.MontoTotal),
+                FechaNecesaria = DateTime.Now.AddDays(7) // Por defecto 7 días
+            };
+
+            return Ok(solicitud);
+        }
+
+        // GET: api/Recetas/reportes/bom-completo/{productoId}
+        [HttpGet("reportes/bom-completo/{productoId}")]
+        public async Task<ActionResult<object>> GetReporteBOMCompleto(int productoId)
+        {
+            var producto = await _context.Productos.FindAsync(productoId);
+            if (producto == null)
+            {
+                return NotFound("Producto no encontrado");
+            }
+
+            var explosion = await CalcularExplosionRecursiva(productoId, 1, 0, true, true);
+            var niveles = await ObtenerNivelesBOMRecursivo(productoId);
+            
+            // Análisis de costos por nivel
+            var costosPorNivel = niveles
+                .GroupBy(n => n.Nivel)
+                .Select(g => new
+                {
+                    Nivel = g.Key,
+                    ComponentesCount = g.Count(),
+                    ComponentesCriticos = g.Count(c => c.EsCritico),
+                    TiempoTotalNivel = g.Sum(c => c.TiempoPreparacion)
+                }).ToList();
+
+            return Ok(new
+            {
+                ProductoInfo = new
+                {
+                    producto.Id,
+                    producto.Nombre,
+                    producto.PrecioVenta
+                },
+                EstadisticasGenerales = new
+                {
+                    TotalComponentes = explosion.Items.Count,
+                    ComponentesCriticos = explosion.Items.Count(i => i.EsCritico),
+                    NivelesEstructura = niveles.Any() ? niveles.Max(n => n.Nivel) + 1 : 1,
+                    CostoTotalMateriales = explosion.CostoTotal,
+                    TiempoTotalProduccion = niveles.Sum(n => n.TiempoPreparacion)
+                },
+                CostosPorNivel = costosPorNivel,
+                ComponentesDetallados = explosion.Items,
+                AlertasCalidad = new
+                {
+                    ComponentesSinStock = explosion.Items.Where(i => i.StockActual <= 0).ToList(),
+                    ComponentesStockBajo = explosion.Items.Where(i => i.StockActual > 0 && i.StockActual <= 5).ToList(),
+                    ComponentesAltaMerma = explosion.Items.Where(i => i.PorcentajeMerma > 10).ToList()
+                }
+            });
+        }
+
+        // GET: api/Recetas/analisis/alternativas/{productoId}
+        [HttpGet("analisis/alternativas/{productoId}")]
+        public async Task<ActionResult<object>> GetAnalisisAlternativas(int productoId)
+        {
+            var recetas = await _context.Recetas
+                .Include(r => r.Insumo)
+                .Where(r => r.ProductoId == productoId && r.InsumoId.HasValue)
+                .ToListAsync();
+
+            var alternativas = new List<object>();
+
+            foreach (var receta in recetas)
+            {
+                // Buscar insumos alternativos de la misma categoría (simplificado por nombre similar)
+                var insumosAlternativos = await _context.Insumos
+                    .Where(i => i.Id != receta.InsumoId && 
+                               i.UnidadMedida == receta.Insumo!.UnidadMedida &&
+                               i.StockActual > 0)
+                    .Take(3) // Máximo 3 alternativas
+                    .ToListAsync();
+
+                if (insumosAlternativos.Any())
+                {
+                    alternativas.Add(new
+                    {
+                        ComponenteOriginal = new
+                        {
+                            receta.InsumoId,
+                            receta.Insumo!.Nombre,
+                            receta.Insumo.CostoUnitario,
+                            receta.Insumo.StockActual
+                        },
+                        AlternativasDisponibles = insumosAlternativos.Select(alt => new
+                        {
+                            alt.Id,
+                            alt.Nombre,
+                            alt.CostoUnitario,
+                            alt.StockActual,
+                            DiferenciaCosto = alt.CostoUnitario - receta.Insumo.CostoUnitario,
+                            PorcentajeDiferencia = receta.Insumo.CostoUnitario > 0 ? 
+                                Math.Round((((alt.CostoUnitario ?? 0) - (receta.Insumo.CostoUnitario ?? 0)) / (receta.Insumo.CostoUnitario ?? 1)) * 100, 2) : 0
+                        }).ToList()
+                    });
+                }
+            }
+
+            return Ok(new
+            {
+                ProductoId = productoId,
+                AlternativasEncontradas = alternativas.Count,
+                Alternativas = alternativas
+            });
+        }
+
+        // POST: api/Recetas/validar-factibilidad
+        [HttpPost("validar-factibilidad")]
+        public async Task<ActionResult<object>> ValidarFactibilidadProduccion([FromBody] FactibilidadRequest request)
+        {
+            var explosion = await CalcularExplosionRecursiva(request.ProductoId, request.CantidadSolicitada, 0, true, true);
+            
+            var problemas = new List<string>();
+            var advertencias = new List<string>();
+
+            // Verificar stock disponible
+            foreach (var item in explosion.Items.Where(i => i.InsumoId.HasValue))
+            {
+                if (item.StockActual < item.CantidadTotal)
+                {
+                    problemas.Add($"Stock insuficiente para {item.Nombre}: Necesario {item.CantidadTotal}, Disponible {item.StockActual}");
+                }
+                else if (item.StockActual - item.CantidadTotal <= 2)
+                {
+                    advertencias.Add($"Stock quedará muy bajo para {item.Nombre} después de la producción");
+                }
+            }
+
+            // Verificar componentes críticos
+            var componentesCriticos = explosion.Items.Where(i => i.EsCritico).ToList();
+            if (componentesCriticos.Any(c => c.StockActual < c.CantidadTotal))
+            {
+                problemas.Add("Componentes críticos sin stock suficiente");
+            }
+
+            var esFactible = !problemas.Any();
+            var factibilidadParcial = problemas.Count <= 2 && explosion.Items.Count(i => i.StockActual < i.CantidadTotal) <= 3;
+
+            return Ok(new
+            {
+                request.ProductoId,
+                request.CantidadSolicitada,
+                EsFactible = esFactible,
+                FactibilidadParcial = factibilidadParcial,
+                Problemas = problemas,
+                Advertencias = advertencias,
+                ComponentesCriticosSinStock = componentesCriticos.Where(c => c.StockActual < c.CantidadTotal).ToList(),
+                CostoTotalProduccion = explosion.CostoTotal,
+                TiempoEstimadoMinutos = explosion.Items.Sum(i => i.TiempoPreparacion ?? 0) * request.CantidadSolicitada,
+                FechaEntregaEstimada = DateTime.Now.AddMinutes((double)(explosion.Items.Sum(i => i.TiempoPreparacion ?? 0) * request.CantidadSolicitada))
+            });
+        }
+
+        // Método privado para calcular explosión recursiva
+        private async Task<(List<ExplosionItem> Items, decimal CostoTotal)> CalcularExplosionRecursiva(
+            int productoId, 
+            decimal cantidad, 
+            int nivel,
+            bool incluirSubrecetas = true,
+            bool verificarStock = true)
+        {
+            var items = new List<ExplosionItem>();
+            decimal costoTotal = 0;
+
+            var recetas = await _context.Recetas
+                .Include(r => r.Insumo)
+                .Include(r => r.Subproducto)
+                .Where(r => r.ProductoId == productoId)
+                .OrderBy(r => r.OrdenSecuencia)
+                .ToListAsync();
+
+            foreach (var receta in recetas)
+            {
+                var cantidadNecesaria = receta.CantidadNecesaria * cantidad;
+                var cantidadConMerma = cantidadNecesaria * (1 + receta.PorcentajeMerma / 100);
+
+                if (receta.InsumoId.HasValue && receta.Insumo != null)
+                {
+                    // Es un insumo directo
+                    var stockActual = verificarStock ? (receta.Insumo.StockActual ?? 0) : 0;
+                    var tieneFaltante = verificarStock && stockActual < cantidadConMerma;
+
+                    var item = new ExplosionItem
+                    {
+                        InsumoId = receta.InsumoId.Value,
+                        Nombre = receta.Insumo.Nombre,
+                        Tipo = "Insumo",
+                        CantidadUnitaria = receta.CantidadNecesaria,
+                        CantidadTotal = cantidadNecesaria,
+                        CantidadConMerma = cantidadConMerma,
+                        UnidadMedida = receta.UnidadMedida,
+                        CostoUnitario = receta.Insumo.CostoUnitario ?? 0,
+                        CostoTotal = cantidadConMerma * (receta.Insumo.CostoUnitario ?? 0),
+                        PorcentajeMerma = receta.PorcentajeMerma,
+                        Nivel = nivel,
+                        StockActual = (int)stockActual,
+                        StockDisponible = (int)(stockActual > cantidadConMerma ? stockActual - cantidadConMerma : 0),
+                        TieneFaltante = tieneFaltante,
+                        EsCritico = receta.EsCritico,
+                        TiempoPreparacion = receta.TiempoPreparacion,
+                        Observaciones = receta.Observaciones
+                    };
+
+                    items.Add(item);
+                    costoTotal += item.CostoTotal;
+                }
+                else if (incluirSubrecetas && receta.SubproductoId.HasValue && receta.Subproducto != null)
+                {
+                    // Es un subproducto - calcular recursivamente
+                    var subExplosion = await CalcularExplosionRecursiva(
+                        receta.SubproductoId.Value, 
+                        cantidadNecesaria, 
+                        nivel + 1,
+                        incluirSubrecetas,
+                        verificarStock
+                    );
+
+                    var subItem = new ExplosionItem
+                    {
+                        SubproductoId = receta.SubproductoId.Value,
+                        Nombre = receta.Subproducto.Nombre,
+                        Tipo = "Subproducto",
+                        CantidadUnitaria = receta.CantidadNecesaria,
+                        CantidadTotal = cantidadNecesaria,
+                        CantidadConMerma = cantidadConMerma,
+                        UnidadMedida = receta.UnidadMedida,
+                        CostoUnitario = subExplosion.CostoTotal / cantidadNecesaria,
+                        CostoTotal = subExplosion.CostoTotal,
+                        PorcentajeMerma = receta.PorcentajeMerma,
+                        Nivel = nivel,
+                        EsCritico = receta.EsCritico,
+                        TiempoPreparacion = receta.TiempoPreparacion,
+                        Observaciones = receta.Observaciones,
+                        SubItems = subExplosion.Items
+                    };
+
+                    items.Add(subItem);
+                    costoTotal += subItem.CostoTotal;
+                }
+            }
+
+            return (items, costoTotal);
+        }
+
+        private bool RecetaExists(int id)
+        {
+            return _context.Recetas.Any(e => e.Id == id);
+        }
+    }
+}

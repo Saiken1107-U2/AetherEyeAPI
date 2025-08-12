@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
@@ -31,7 +32,10 @@ namespace AetherEyeAPI.Controllers
                     c.Id,
                     c.Fecha,
                     c.Total,
-                    c.ProveedorId
+                    c.ProveedorId,
+                    c.Estado,
+                    c.NumeroFactura,
+                    c.Observaciones
                 })
                 .OrderByDescending(c => c.Fecha)
                 .ToListAsync();
@@ -57,7 +61,7 @@ namespace AetherEyeAPI.Controllers
                         dc.Id,
                         dc.Cantidad,
                         dc.CostoUnitario,
-                        dc.Subtotal,
+                        Subtotal = dc.Cantidad * dc.CostoUnitario,
                         dc.InsumoId
                     })
                     .ToListAsync();
@@ -90,9 +94,9 @@ namespace AetherEyeAPI.Controllers
                     Proveedor = proveedor,
                     DetallesCompra = detallesConInsumos,
                     TotalItems = detalles.Count,
-                    Estado = "Completada", // Valor temporal hasta que los datos de BD estén disponibles
-                    NumeroFactura = (string?)null, // Temporal
-                    Observaciones = (string?)null // Temporal
+                    compra.Estado,
+                    compra.NumeroFactura,
+                    compra.Observaciones
                 });
             }
 
@@ -110,7 +114,10 @@ namespace AetherEyeAPI.Controllers
                     c.Id,
                     c.Fecha,
                     c.Total,
-                    c.ProveedorId
+                    c.ProveedorId,
+                    c.Estado,
+                    c.NumeroFactura,
+                    c.Observaciones
                 })
                 .FirstOrDefaultAsync();
 
@@ -138,7 +145,7 @@ namespace AetherEyeAPI.Controllers
                     dc.Id,
                     dc.Cantidad,
                     dc.CostoUnitario,
-                    dc.Subtotal,
+                    Subtotal = dc.Cantidad * dc.CostoUnitario,
                     dc.InsumoId
                 })
                 .ToListAsync();
@@ -159,6 +166,9 @@ namespace AetherEyeAPI.Controllers
                 compraBasica.Id,
                 compraBasica.Fecha,
                 compraBasica.Total,
+                compraBasica.Estado,
+                compraBasica.NumeroFactura,
+                compraBasica.Observaciones,
                 Proveedor = proveedor,
                 DetallesCompra = detallesCompra.Select(dc => new {
                     dc.Id,
@@ -233,7 +243,7 @@ namespace AetherEyeAPI.Controllers
                 .Select(dc => new {
                     dc.InsumoId,
                     dc.Cantidad,
-                    dc.Subtotal
+                    Subtotal = dc.Cantidad * dc.CostoUnitario
                 })
                 .ToListAsync();
 
@@ -295,34 +305,82 @@ namespace AetherEyeAPI.Controllers
         }
 
         // PUT: api/Compras/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutCompra(int id, Compra compra)
+        public async Task<IActionResult> PutCompra(int id, CompraRequest request)
         {
-            if (id != compra.Id)
-            {
-                return BadRequest();
-            }
-
-            _context.Entry(compra).State = EntityState.Modified;
-
             try
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!CompraExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
+                // Verificar que la compra existe
+                var compraExistente = await _context.Compras
+                    .Include(c => c.DetallesCompra)
+                    .FirstOrDefaultAsync(c => c.Id == id);
 
-            return NoContent();
+                if (compraExistente == null)
+                {
+                    return NotFound($"No se encontró la compra con ID {id}");
+                }
+
+                // Verificar que el proveedor existe
+                var proveedorExiste = await _context.Proveedores
+                    .AnyAsync(p => p.Id == request.ProveedorId);
+
+                if (!proveedorExiste)
+                {
+                    return BadRequest($"El proveedor con ID {request.ProveedorId} no existe");
+                }
+
+                // Actualizar datos de la compra
+                compraExistente.ProveedorId = request.ProveedorId;
+                compraExistente.NumeroFactura = request.NumeroFactura;
+                compraExistente.Observaciones = request.Observaciones;
+
+                // Eliminar detalles existentes
+                _context.DetalleCompras.RemoveRange(compraExistente.DetallesCompra);
+
+                // Agregar nuevos detalles y calcular el total
+                decimal nuevoTotal = 0;
+                foreach (var insumoRequest in request.Insumos)
+                {
+                    var insumoExiste = await _context.Insumos
+                        .AnyAsync(i => i.Id == insumoRequest.InsumoId);
+
+                    if (!insumoExiste)
+                    {
+                        return BadRequest($"El insumo con ID {insumoRequest.InsumoId} no existe");
+                    }
+
+                    var detalleCompra = new DetalleCompra
+                    {
+                        CompraId = id,
+                        InsumoId = insumoRequest.InsumoId,
+                        Cantidad = insumoRequest.Cantidad,
+                        CostoUnitario = insumoRequest.CostoUnitario
+                    };
+
+                    _context.DetalleCompras.Add(detalleCompra);
+                    nuevoTotal += insumoRequest.Cantidad * insumoRequest.CostoUnitario;
+                }
+
+                // Actualizar el total
+                compraExistente.Total = nuevoTotal;
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    Mensaje = "Compra actualizada exitosamente",
+                    CompraId = id,
+                    Total = nuevoTotal
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    Mensaje = "Error interno del servidor",
+                    Error = ex.Message
+                });
+            }
         }
 
         // POST: api/Compras
@@ -340,16 +398,40 @@ namespace AetherEyeAPI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteCompra(int id)
         {
-            var compra = await _context.Compras.FindAsync(id);
-            if (compra == null)
+            try
             {
-                return NotFound();
+                // Verificar que la compra existe
+                var compra = await _context.Compras
+                    .Include(c => c.DetallesCompra)
+                    .FirstOrDefaultAsync(c => c.Id == id);
+
+                if (compra == null)
+                {
+                    return NotFound($"No se encontró la compra con ID {id}");
+                }
+
+                // Eliminar primero los detalles (por integridad referencial)
+                _context.DetalleCompras.RemoveRange(compra.DetallesCompra);
+
+                // Eliminar la compra
+                _context.Compras.Remove(compra);
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    Mensaje = "Compra eliminada exitosamente",
+                    CompraId = id
+                });
             }
-
-            _context.Compras.Remove(compra);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    Mensaje = "Error interno del servidor",
+                    Error = ex.Message
+                });
+            }
         }
 
         private bool CompraExists(int id)

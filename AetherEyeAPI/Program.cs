@@ -111,7 +111,8 @@ if (app.Environment.IsDevelopment())
 // Usar CORS
 app.UseCors("AllowAngularApp");
 
-app.UseHttpsRedirection();
+// Comentado para desarrollo local
+// app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();

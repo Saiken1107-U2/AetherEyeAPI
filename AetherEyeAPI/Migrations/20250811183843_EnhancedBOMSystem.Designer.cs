@@ -4,6 +4,7 @@ using AetherEyeAPI.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AetherEyeAPI.Migrations
 {
     [DbContext(typeof(AetherEyeDbContext))]
-    partial class AetherEyeDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250811183843_EnhancedBOMSystem")]
+    partial class EnhancedBOMSystem
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -30,61 +33,23 @@ namespace AetherEyeAPI.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int?>("AdminId")
-                        .HasColumnType("int");
-
                     b.Property<int>("Calificacion")
                         .HasColumnType("int");
 
-                    b.Property<string>("CategoriaProblema")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
                     b.Property<string>("ComentarioTexto")
                         .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<string>("EstadoSeguimiento")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasDefaultValue("Pendiente");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("Fecha")
                         .HasColumnType("datetime2");
 
-                    b.Property<DateTime?>("FechaRespuesta")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("NotasInternas")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<int>("Prioridad")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(2);
-
                     b.Property<int>("ProductoId")
                         .HasColumnType("int");
-
-                    b.Property<bool>("RequiereAccion")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
-
-                    b.Property<string>("RespuestaAdmin")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<int>("UsuarioId")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("AdminId");
 
                     b.HasIndex("ProductoId");
 
@@ -206,8 +171,8 @@ namespace AetherEyeAPI.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<decimal>("Cantidad")
-                        .HasColumnType("decimal(18,2)");
+                    b.Property<int>("Cantidad")
+                        .HasColumnType("int");
 
                     b.Property<decimal>("PrecioUnitario")
                         .HasColumnType("decimal(18,2)");
@@ -486,29 +451,54 @@ namespace AetherEyeAPI.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("CantidadNecesaria")
-                        .HasColumnType("int");
+                    b.Property<decimal>("CantidadNecesaria")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<bool>("EsCritico")
+                        .HasColumnType("bit");
 
                     b.Property<DateTime>("FechaCreacion")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("InsumoId")
+                    b.Property<int?>("InsumoId")
                         .HasColumnType("int");
+
+                    b.Property<int>("Nivel")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Observaciones")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("OrdenSecuencia")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("PorcentajeMerma")
+                        .HasColumnType("decimal(5,2)");
 
                     b.Property<int>("ProductoId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("SubproductoId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("TiempoPreparacion")
+                        .HasColumnType("decimal(8,2)");
+
                     b.Property<string>("UnidadMedida")
                         .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("InsumoId");
 
-                    b.HasIndex("ProductoId", "InsumoId")
-                        .IsUnique();
+                    b.HasIndex("Nivel");
+
+                    b.HasIndex("SubproductoId");
+
+                    b.HasIndex("ProductoId", "OrdenSecuencia");
 
                     b.ToTable("Recetas");
                 });
@@ -574,52 +564,8 @@ namespace AetherEyeAPI.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("CorreoCliente")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<decimal>("Descuento")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("DireccionCliente")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Estado")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasDefaultValue("Pendiente");
-
                     b.Property<DateTime>("Fecha")
                         .HasColumnType("datetime2");
-
-                    b.Property<decimal>("Impuestos")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("MetodoPago")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("NombreCliente")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("NumeroFactura")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("Observaciones")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<decimal>("Subtotal")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<string>("TelefonoCliente")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
 
                     b.Property<decimal>("Total")
                         .HasColumnType("decimal(18,2)");
@@ -636,24 +582,17 @@ namespace AetherEyeAPI.Migrations
 
             modelBuilder.Entity("AetherEyeAPI.Models.Comentario", b =>
                 {
-                    b.HasOne("AetherEyeAPI.Models.Usuario", "Admin")
-                        .WithMany()
-                        .HasForeignKey("AdminId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("AetherEyeAPI.Models.Producto", "Producto")
                         .WithMany()
                         .HasForeignKey("ProductoId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("AetherEyeAPI.Models.Usuario", "Usuario")
                         .WithMany()
                         .HasForeignKey("UsuarioId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Admin");
 
                     b.Navigation("Producto");
 
@@ -714,11 +653,11 @@ namespace AetherEyeAPI.Migrations
                     b.HasOne("AetherEyeAPI.Models.Producto", "Producto")
                         .WithMany()
                         .HasForeignKey("ProductoId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("AetherEyeAPI.Models.Venta", "Venta")
-                        .WithMany("DetallesVenta")
+                        .WithMany()
                         .HasForeignKey("VentaId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -765,8 +704,7 @@ namespace AetherEyeAPI.Migrations
                     b.HasOne("AetherEyeAPI.Models.Insumo", "Insumo")
                         .WithMany()
                         .HasForeignKey("InsumoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("AetherEyeAPI.Models.Producto", "Producto")
                         .WithMany()
@@ -774,9 +712,16 @@ namespace AetherEyeAPI.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("AetherEyeAPI.Models.Producto", "Subproducto")
+                        .WithMany()
+                        .HasForeignKey("SubproductoId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Insumo");
 
                     b.Navigation("Producto");
+
+                    b.Navigation("Subproducto");
                 });
 
             modelBuilder.Entity("AetherEyeAPI.Models.Usuario", b =>
@@ -795,7 +740,7 @@ namespace AetherEyeAPI.Migrations
                     b.HasOne("AetherEyeAPI.Models.Usuario", "Usuario")
                         .WithMany()
                         .HasForeignKey("UsuarioId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Usuario");
@@ -809,11 +754,6 @@ namespace AetherEyeAPI.Migrations
             modelBuilder.Entity("AetherEyeAPI.Models.Rol", b =>
                 {
                     b.Navigation("Usuarios");
-                });
-
-            modelBuilder.Entity("AetherEyeAPI.Models.Venta", b =>
-                {
-                    b.Navigation("DetallesVenta");
                 });
 #pragma warning restore 612, 618
         }

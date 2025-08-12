@@ -21,6 +21,78 @@ namespace AetherEyeAPI.Controllers
             _context = context;
         }
 
+        // GET: api/Comentarios/admin/estadisticas-seguimiento
+        [HttpGet("admin/estadisticas-seguimiento")]
+        public async Task<ActionResult<object>> GetEstadisticasSeguimiento()
+        {
+            try
+            {
+                var totalComentarios = await _context.Comentarios.CountAsync();
+                var pendientes = await _context.Comentarios.CountAsync(c => c.EstadoSeguimiento == "Pendiente");
+                var enRevision = await _context.Comentarios.CountAsync(c => c.EstadoSeguimiento == "En revision");
+                var respondidos = await _context.Comentarios.CountAsync(c => c.EstadoSeguimiento == "Respondido");
+                var resueltos = await _context.Comentarios.CountAsync(c => c.EstadoSeguimiento == "Resuelto");
+                var archivados = await _context.Comentarios.CountAsync(c => c.EstadoSeguimiento == "Archivado");
+                var requierenAccion = await _context.Comentarios.CountAsync(c => c.RequiereAccion);
+                var altaPrioridad = await _context.Comentarios.CountAsync(c => c.Prioridad == 1);
+
+                var estadisticas = new
+                {
+                    TotalComentarios = totalComentarios,
+                    Pendientes = pendientes,
+                    EnRevision = enRevision,
+                    Respondidos = respondidos,
+                    Resueltos = resueltos,
+                    Archivados = archivados,
+                    RequierenAccion = requierenAccion,
+                    AltaPrioridad = altaPrioridad,
+                    PromedioCalificacion = totalComentarios > 0 ? await _context.Comentarios.AverageAsync(c => (double)c.Calificacion) : 0
+                };
+
+                return Ok(estadisticas);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al obtener estadísticas", message = ex.Message });
+            }
+        }
+
+        // GET: api/Comentarios/admin/seguimiento
+        [HttpGet("admin/seguimiento")]
+        public async Task<ActionResult<IEnumerable<object>>> GetComentariosConSeguimiento()
+        {
+            try
+            {
+                var comentarios = await _context.Comentarios
+                    .Include(c => c.Usuario)
+                    .Include(c => c.Producto)
+                    .Select(c => new
+                    {
+                        c.Id,
+                        c.ComentarioTexto,
+                        c.Calificacion,
+                        c.Fecha,
+                        c.EstadoSeguimiento,
+                        c.RespuestaAdmin,
+                        c.FechaRespuesta,
+                        c.NotasInternas,
+                        c.Prioridad,
+                        c.RequiereAccion,
+                        c.CategoriaProblema,
+                        Usuario = c.Usuario!.NombreCompleto,
+                        Producto = c.Producto!.Nombre
+                    })
+                    .OrderByDescending(c => c.Fecha)
+                    .ToListAsync();
+
+                return Ok(comentarios);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al obtener comentarios con seguimiento", message = ex.Message });
+            }
+        }
+
         // GET: api/Comentarios
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Comentario>>> GetComentarios()
@@ -32,7 +104,9 @@ namespace AetherEyeAPI.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<Comentario>> GetComentario(int id)
         {
-            var comentario = await _context.Comentarios.FindAsync(id);
+            var comentario = await _context.Comentarios
+                .Where(c => c.Id == id)
+                .FirstOrDefaultAsync();
 
             if (comentario == null)
             {
@@ -88,7 +162,10 @@ namespace AetherEyeAPI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteComentario(int id)
         {
-            var comentario = await _context.Comentarios.FindAsync(id);
+            var comentario = await _context.Comentarios
+                .Where(c => c.Id == id)
+                .FirstOrDefaultAsync();
+                
             if (comentario == null)
             {
                 return NotFound();
@@ -274,6 +351,15 @@ namespace AetherEyeAPI.Controllers
             var comentarios = await _context.Comentarios
                 .Include(c => c.Producto)
                 .Include(c => c.Usuario)
+                .Select(c => new
+                {
+                    Id = c.Id,
+                    ProductoNombre = c.Producto!.Nombre,
+                    UsuarioNombre = c.Usuario!.NombreCompleto,
+                    ComentarioTexto = c.ComentarioTexto,
+                    Fecha = c.Fecha,
+                    Calificacion = c.Calificacion
+                })
                 .OrderByDescending(c => c.Fecha)
                 .ToListAsync();
 
@@ -281,8 +367,8 @@ namespace AetherEyeAPI.Controllers
             var resultado = comentarios.Select(c => new
             {
                 id = c.Id,
-                producto = c.Producto?.Nombre ?? "Producto no disponible",
-                cliente = c.Usuario?.NombreCompleto ?? "Cliente no disponible",
+                producto = c.ProductoNombre ?? "Producto no disponible",
+                cliente = c.UsuarioNombre ?? "Cliente no disponible",
                 contenido = c.ComentarioTexto,
                 fecha = c.Fecha.ToString("yyyy-MM-dd")
             }).ToList();
@@ -300,13 +386,23 @@ namespace AetherEyeAPI.Controllers
         [HttpDelete("eliminar/{id}")]
         public async Task<IActionResult> EliminarComentario(int id)
         {
-            var comentario = await _context.Comentarios.FindAsync(id);
-            if (comentario == null) return NotFound();
+            try
+            {
+                var comentario = await _context.Comentarios
+                    .Where(c => c.Id == id)
+                    .FirstOrDefaultAsync();
+                    
+                if (comentario == null) return NotFound();
 
-            _context.Comentarios.Remove(comentario);
-            await _context.SaveChangesAsync();
+                _context.Comentarios.Remove(comentario);
+                await _context.SaveChangesAsync();
 
-            return NoContent();
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al eliminar comentario", message = ex.Message });
+            }
         }
 
         [HttpGet("estadisticas/{productoId}")]
@@ -408,5 +504,129 @@ namespace AetherEyeAPI.Controllers
                 return BadRequest($"Error al generar datos: {ex.Message}");
             }
         }
+
+        // PUT: api/Comentarios/{id}/seguimiento
+        [HttpPut("{id}/seguimiento")]
+        public async Task<IActionResult> ActualizarSeguimiento(int id, [FromBody] ActualizarSeguimientoRequest request)
+        {
+            try
+            {
+                var comentario = await _context.Comentarios
+                    .Where(c => c.Id == id)
+                    .FirstOrDefaultAsync();
+                    
+                if (comentario == null)
+                {
+                    return NotFound(new { message = "Comentario no encontrado" });
+                }
+
+                // Actualizar campos de seguimiento
+                comentario.EstadoSeguimiento = request.EstadoSeguimiento ?? comentario.EstadoSeguimiento;
+                comentario.RespuestaAdmin = request.RespuestaAdmin ?? comentario.RespuestaAdmin;
+                comentario.NotasInternas = request.NotasInternas ?? comentario.NotasInternas;
+                comentario.Prioridad = request.Prioridad ?? comentario.Prioridad;
+                comentario.RequiereAccion = request.RequiereAccion ?? comentario.RequiereAccion;
+                comentario.CategoriaProblema = request.CategoriaProblema ?? comentario.CategoriaProblema;
+                comentario.AdminId = request.AdminId ?? comentario.AdminId;
+
+                // Si se proporciona una respuesta y no había fecha de respuesta, establecerla
+                if (!string.IsNullOrEmpty(request.RespuestaAdmin) && comentario.FechaRespuesta == null)
+                {
+                    comentario.FechaRespuesta = DateTime.Now;
+                }
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Seguimiento actualizado exitosamente" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al actualizar seguimiento", message = ex.Message });
+            }
+        }
+
+        // POST: api/Comentarios/{id}/responder
+        [HttpPost("{id}/responder")]
+        public async Task<IActionResult> ResponderComentario(int id, [FromBody] ResponderComentarioRequest request)
+        {
+            try
+            {
+                var comentario = await _context.Comentarios
+                    .Where(c => c.Id == id)
+                    .FirstOrDefaultAsync();
+                    
+                if (comentario == null)
+                {
+                    return NotFound(new { message = "Comentario no encontrado" });
+                }
+
+                // Actualizar la respuesta del administrador
+                comentario.RespuestaAdmin = request.RespuestaAdmin;
+                comentario.FechaRespuesta = DateTime.Now;
+                comentario.AdminId = request.AdminId;
+                comentario.EstadoSeguimiento = "Respondido";
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new { 
+                    message = "Respuesta enviada exitosamente",
+                    fechaRespuesta = comentario.FechaRespuesta
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al responder comentario", message = ex.Message });
+            }
+        }
+
+        // GET: api/Comentarios/cliente/{clienteId}
+        [HttpGet("cliente/{clienteId}")]
+        public async Task<IActionResult> ObtenerComentariosCliente(int clienteId)
+        {
+            try
+            {
+                var comentarios = await _context.Comentarios
+                    .Where(c => c.UsuarioId == clienteId)
+                    .Include(c => c.Producto)
+                    .Select(c => new
+                    {
+                        c.Id,
+                        c.ComentarioTexto,
+                        c.Calificacion,
+                        c.Fecha,
+                        ProductoNombre = c.Producto!.Nombre,
+                        c.RespuestaAdmin,
+                        c.FechaRespuesta,
+                        TieneRespuesta = !string.IsNullOrEmpty(c.RespuestaAdmin)
+                    })
+                    .OrderByDescending(c => c.Fecha)
+                    .ToListAsync();
+
+                return Ok(comentarios);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al obtener comentarios del cliente", message = ex.Message });
+            }
+        }
+    }
+
+    // Clase para el request de actualización de seguimiento
+    public class ActualizarSeguimientoRequest
+    {
+        public string? EstadoSeguimiento { get; set; }
+        public string? RespuestaAdmin { get; set; }
+        public string? NotasInternas { get; set; }
+        public int? Prioridad { get; set; }
+        public bool? RequiereAccion { get; set; }
+        public string? CategoriaProblema { get; set; }
+        public int? AdminId { get; set; }
+    }
+
+    // Clase para responder a comentarios
+    public class ResponderComentarioRequest
+    {
+        public required string RespuestaAdmin { get; set; }
+        public int AdminId { get; set; }
     }
 }
